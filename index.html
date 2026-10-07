@@ -1183,7 +1183,9 @@ const S={
   deathScore:0,
   deathTime:0,
   deathSpawnBank:0,
-  shockwaves:[]
+  shockwaves:[],
+  playerFrameX:0,playerFrameY:0,
+  collisions:{steered:0,passive:0,dash:0}
 };
 
 const player={
@@ -1199,7 +1201,8 @@ const control={
   sensitivity:1.34,
   moveX:0,moveY:0,
   desiredAngle:0,
-  lastMoveTime:0
+  lastMoveTime:0,lastEventTime:0,
+  speedX:0,speedY:0
 };
 
 
@@ -2206,11 +2209,14 @@ function reset(){
     deathScore:0,
     deathTime:0,
     deathSpawnBank:0,
-    shockwaves:[]
+    shockwaves:[],
+    collisions:{steered:0,passive:0,dash:0}
   });
   player.x=W*.5;player.y=H*.42;player.vx=player.speed*.7;player.vy=0;
+  S.playerFrameX=player.x;S.playerFrameY=player.y;
   player.angle=0;player.hp=3;player.trail=[];
   control.active=false;control.primaryId=null;control.moveX=0;control.moveY=0;control.desiredAngle=0;
+  control.lastEventTime=0;control.lastMoveTime=0;control.speedX=0;control.speedY=0;
   musicTension=0;
   audioStage=-1;
   skillPercLast=-99;
@@ -2318,6 +2324,14 @@ function gameOver(){
   S.deathScore=Math.floor(S.score);
   S.deathTime=S.t;
   S.deathSpawnBank=0;
+  // Lightweight QA diagnostics for distinguishing steered from passive chains.
+  console.info('Rocket Panic run interactions',{
+    steeredCollisions:S.collisions.steered,
+    passiveCollisions:S.collisions.passive,
+    dashBreaks:S.collisions.dash,
+    field:S.zoomStage+1,
+    elapsedSeconds:+S.t.toFixed(1)
+  });
 
   control.active=false;
   control.primaryId=null;
@@ -2580,10 +2594,13 @@ function worldBounds(scale=S.cameraScale){
 
 function predictPlayer(lead=0.22){
   const b=worldBounds();
-  return {
-    x:clamp(player.x + player.vx*lead*.052,b.left,b.right),
-    y:clamp(player.y + player.vy*lead*.052,b.top,b.bottom)
-  };
+  const scale=Math.max(.28,S.cameraScale);
+  // Use time-normalized touch velocity, not device-dependent event deltas.
+  const active=control.active && performance.now()-control.lastMoveTime<115;
+  const horizon=Math.min(.42,Math.max(0,lead)*.55);
+  const dx=active?clamp(control.speedX*horizon,-80/scale,80/scale):0;
+  const dy=active?clamp(control.speedY*horizon,-80/scale,80/scale):0;
+  return {x:clamp(player.x+dx,b.left,b.right),y:clamp(player.y+dy,b.top,b.bottom)};
 }
 
 function angleDistance(a,b){
@@ -2760,7 +2777,8 @@ function updatePatternDirector(dt,d){
 
   S.nextPattern-=dt;
   if(!busy && S.nextPattern<=0 && S.zoomStage>=1 && !d.breath &&
-     d.pressure>.84 && S.breakoutSafety<=0 && S.missiles.length<d.cap-3){
+     d.pressure>.84 && S.breakoutSafety<=0 &&
+     S.missiles.length<Math.min(d.cap-3,Math.max(4,d.cap*.58))){
     busy=beginThreatPattern();
     S.nextPattern=Math.max(4.0,6.9-S.zoomStage*.48)+Math.random()*1.6;
   }
@@ -2854,7 +2872,7 @@ function floatText(x,y,text,color='#fff'){
 // Primary finger: relative movement.
 // Second simultaneous finger: dash.
 
-function applyRelativeMove(dx,dy){
+function applyRelativeMove(dx,dy,eventTime=performance.now()){
   // Ignore sub-pixel touchscreen noise.
   if(Math.abs(dx)<0.15 && Math.abs(dy)<0.15)return;
 
@@ -2882,15 +2900,19 @@ function applyRelativeMove(dx,dy){
     control.moveY=actualY;
     control.desiredAngle=Math.atan2(actualY,actualX);
     control.lastMoveTime=performance.now();
-
-    // Velocity is only visual/game-feel metadata now; position itself is direct.
-    // This keeps trails/orientation alive without adding control lag.
-    player.vx=actualX*60;
-    player.vy=actualY*60;
+    // Coalesced touch events arrive at device-dependent frequencies.
+    const elapsedMs=clamp(eventTime-(control.lastEventTime||eventTime-16.7),4,50);
+    const smoothing=.36;
+    control.speedX+=(actualX/(elapsedMs/1000)-control.speedX)*smoothing;
+    control.speedY+=(actualY/(elapsedMs/1000)-control.speedY)*smoothing;
+    // Velocity is visual/audio metadata; direct-touch positioning stays unchanged.
+    player.vx=actualX/(elapsedMs/1000);
+    player.vy=actualY/(elapsedMs/1000);
 
     player.trail.push({x:player.x,y:player.y,life:.95});
     if(player.trail.length>72)player.trail.shift();
   }
+  control.lastEventTime=eventTime;
 }
 
 function pointerDown(e){
@@ -2911,6 +2933,8 @@ function pointerDown(e){
     control.lastY=e.clientY;
     control.touchX=e.clientX;
     control.touchY=e.clientY;
+    control.lastEventTime=e.timeStamp;
+    control.speedX=0;control.speedY=0;
     canvas.setPointerCapture?.(e.pointerId);
     return;
   }
@@ -2930,7 +2954,7 @@ function pointerMove(e){
     const dx=p.clientX-control.lastX;
     const dy=p.clientY-control.lastY;
 
-    applyRelativeMove(dx,dy);
+    applyRelativeMove(dx,dy,p.timeStamp);
 
     control.lastX=p.clientX;
     control.lastY=p.clientY;
@@ -2947,6 +2971,8 @@ function pointerUp(e){
   control.primaryId=null;
   control.moveX=0;
   control.moveY=0;
+  control.speedX=0;
+  control.speedY=0;
   player.vx=0;
   player.vy=0;
 }
@@ -2997,6 +3023,38 @@ function dash(){
   }
   if(player.trail.length>72)player.trail.splice(0,player.trail.length-72);
 
+  // A dash is an instantaneous swept attack. Resolve the *real path now*, not
+  // just its destination at the next animation frame. This still works if
+  // another finger movement follows before requestAnimationFrame.
+  const scale=Math.max(.28,S.cameraScale);
+  for(const m of S.missiles){
+    if(m.dead)continue;
+    const rr=hitRadius()+enemyRadius(m)+1/scale;
+    const t=sweptCircleTOI(m.x-oldX,m.y-oldY,m.x-player.x,m.y-player.y,rr);
+    if(t<0)continue;
+    m.dead=true;
+    const x=oldX+(player.x-oldX)*t;
+    const y=oldY+(player.y-oldY)*t;
+    burst(x,y,S.zoomStage>=4?22:16,m.color,S.zoomStage>=4?1.22:1.05);
+    shockwave(x,y,m.color,S.zoomStage>=4?1.10:.9);
+    explosionBloom(x,y,m.color,S.zoomStage>=4?1.12:.82);
+    sfxExplosion(1,x,S.zoomStage);
+    S.shake=Math.max(S.shake,S.zoomStage>=4?10:8);
+    rewardSkill(.48,.18,1.90);
+    S.score+=260*S.combo;
+    S.collisions.dash++;
+    floatText(x,y-18,'DASH BREAK','#bffcff');
+    musicalSkillHit('dashKill',1);
+  }
+  // Crossing a bullet during a dash also consumes it without taking damage.
+  for(const b of S.bullets){
+    if(b.dead)continue;
+    if(sweptCircleTOI(b.x-oldX,b.y-oldY,b.x-player.x,b.y-player.y,hitRadius()+b.r)>=0){
+      b.dead=true;
+      burst(b.x,b.y,7,b.color,.45);
+    }
+  }
+
   burst(player.x,player.y,18,'#5cf8ff',.75);
   sfxDash();
   S.shake=3;
@@ -3019,39 +3077,131 @@ function breakFlow(){
   S.nearSlow=0;
 }
 
-function missileVsMissile(){
-  const a=S.missiles;
-  for(let i=0;i<a.length;i++){
-    if(a[i].dead)continue;
-    for(let j=i+1;j<a.length;j++){
-      if(a[j].dead)continue;
-      const dx=a[i].x-a[j].x,dy=a[i].y-a[j].y;
-      const rr=enemyRadius(a[i])+enemyRadius(a[j])+1/Math.max(.28,S.cameraScale);
-      if(dx*dx+dy*dy<rr*rr){
-        a[i].dead=a[j].dead=true;
-        const x=(a[i].x+a[j].x)/2,y=(a[i].y+a[j].y)/2;
-        burst(x,y,S.zoomStage>=4?19:14,'#ff78d8',S.zoomStage>=4?1.24:1.1);
-        shockwave(x,y,'#ff78d8',S.zoomStage>=4?.95:.75);
-        explosionBloom(x,y,'#ff78d8',S.zoomStage>=4?1.0:.70);
-        sfxExplosion(.8,x,S.zoomStage);
 
-        // A collision only counts as mastery when it happened in the player's local
-        // danger space or one of the missiles was already threaded past the player.
-        // Random off-screen collisions remain pretty, but they do not play the game for you.
-        const collisionScreenDist=Math.hypot(x-player.x,y-player.y)*S.cameraScale;
-        const manipulated=collisionScreenDist<235 || a[i].near || a[j].near;
-        if(manipulated){
-          rewardSkill(.36,.16,1.82);
-          S.score+=210*S.combo;
-          musicalSkillHit('collision',1);
-          floatText(x,y-12,'CHAIN BOOM','#ffd0f2');
-        }else{
-          S.score+=28;
-        }
-        S.shake=Math.max(S.shake,manipulated?4.2:3.1);
+/**
+ * Earliest time of impact for a relative movement segment against a circle.
+ * -1 means no intersection. If already overlapping, contact occurs at t=0.
+ */
+function sweptCircleTOI(x0,y0,x1,y1,r){
+  const c=x0*x0+y0*y0-r*r;
+  if(c<=0)return 0;
+  const dx=x1-x0,dy=y1-y0;
+  const a=dx*dx+dy*dy;
+  if(a<1e-10)return -1;
+  const b=2*(x0*dx+y0*dy);
+  const disc=b*b-4*a*c;
+  if(disc<0)return -1;
+  const t=(-b-Math.sqrt(disc))/(2*a);
+  return t>=0&&t<=1?t:-1;
+}
+function segmentMinDistanceSq(x0,y0,x1,y1){
+  const dx=x1-x0,dy=y1-y0;
+  const d=dx*dx+dy*dy;
+  const t=d>1e-10?clamp(-(x0*dx+y0*dy)/d,0,1):0;
+  const x=x0+dx*t,y=y0+dy*t;
+  return x*x+y*y;
+}
+/**
+ * Resolve missile/missile, missile/player, and bullet/player events in their
+ * true frame order. An impact before two missiles collide still counts.
+ */
+function resolveCombatCollisions(px0,py0){
+  const events=[],a=S.missiles;
+  const scale=Math.max(.28,S.cameraScale);
+  for(let i=0;i<a.length;i++){
+    const m=a[i];
+    if(m.dead)continue;
+    const t=sweptCircleTOI(m.prevX-px0,m.prevY-py0,m.x-player.x,m.y-player.y,
+      hitRadius()+enemyRadius(m)+1/scale);
+    if(t>=0)events.push({t,kind:'playerMissile',i});
+    for(let j=i+1;j<a.length;j++){
+      const n=a[j];
+      if(n.dead)continue;
+      const rr=enemyRadius(m)+enemyRadius(n)+1/scale;
+      const when=sweptCircleTOI(m.prevX-n.prevX,m.prevY-n.prevY,m.x-n.x,m.y-n.y,rr);
+      if(when>=0)events.push({t:when,kind:'pair',i,j});
+    }
+  }
+  for(let i=0;i<S.bullets.length;i++){
+    const b=S.bullets[i];
+    if(b.dead)continue;
+    const t=sweptCircleTOI(b.prevX-px0,b.prevY-py0,b.x-player.x,b.y-player.y,hitRadius()+b.r);
+    if(t>=0)events.push({t,kind:'playerBullet',i});
+  }
+  events.sort((x,y)=>x.t-y.t);
+  for(const e of events){
+    if(e.kind==='pair'){
+      const m=a[e.i],n=a[e.j];
+      if(m.dead||n.dead)continue;
+      m.dead=n.dead=true;
+      const x=(m.prevX+(m.x-m.prevX)*e.t+n.prevX+(n.x-n.prevX)*e.t)/2;
+      const y=(m.prevY+(m.y-m.prevY)*e.t+n.prevY+(n.y-n.prevY)*e.t)/2;
+      burst(x,y,S.zoomStage>=4?19:14,'#ff78d8',S.zoomStage>=4?1.24:1.1);
+      shockwave(x,y,'#ff78d8',S.zoomStage>=4?.95:.75);
+      explosionBloom(x,y,'#ff78d8',S.zoomStage>=4?1.0:.70);
+      sfxExplosion(.8,x,S.zoomStage);
+      const playerAtX=px0+(player.x-px0)*e.t;
+      const playerAtY=py0+(player.y-py0)*e.t;
+      const screenDist=Math.hypot(x-playerAtX,y-playerAtY)*scale;
+      const steered=screenDist<220&&(m.near||n.near);
+      if(steered){
+        S.collisions.steered++;
+        rewardSkill(.36,.16,1.82);
+        S.score+=210*S.combo;
+        musicalSkillHit('collision',1);
+        floatText(x,y-12,'CHAIN BOOM','#ffd0f2');
+      }else{
+        S.collisions.passive++;
+        S.score+=28;
+      }
+      S.shake=Math.max(S.shake,steered?4.2:3.1);
+    }else if(e.kind==='playerMissile'){
+      const m=a[e.i];
+      if(m.dead)continue;
+      m.dead=true;
+      const x=m.prevX+(m.x-m.prevX)*e.t;
+      const y=m.prevY+(m.y-m.prevY)*e.t;
+      burst(x,y,S.zoomStage>=4?22:16,m.color,S.zoomStage>=4?1.22:1.05);
+      shockwave(x,y,m.color,S.zoomStage>=4?1.10:.9);
+      explosionBloom(x,y,m.color,S.zoomStage>=4?1.12:.82);
+      sfxExplosion(1,x,S.zoomStage);
+      S.shake=S.zoomStage>=4?10:8;
+      if(S.dashT>0){
+        rewardSkill(.48,.18,1.90);
+        S.score+=260*S.combo;
+        floatText(player.x,player.y-18,'DASH BREAK','#bffcff');
+        musicalSkillHit('dashKill',1);
+        S.collisions.dash++;
+      }else if(S.invuln<=0){
+        player.hp--;
+        S.invuln=.68;
+        S.damageFlash=1;
+        breakFlow();
+        S.shieldRegenDelay=6.5;
+        S.shieldRegenProgress=0;
+        if(player.hp<=0){gameOver();return true}
+        sfxHit();
+      }
+    }else{
+      const b=S.bullets[e.i];
+      if(b.dead)continue;
+      b.dead=true;
+      const x=b.prevX+(b.x-b.prevX)*e.t;
+      const y=b.prevY+(b.y-b.prevY)*e.t;
+      burst(x,y,7,b.color,.45);
+      if(S.invuln<=0 && S.dashT<=0){
+        player.hp--;
+        S.invuln=.64;
+        S.damageFlash=1;
+        breakFlow();
+        S.shieldRegenDelay=6.5;
+        S.shieldRegenProgress=0;
+        if(player.hp<=0){gameOver();return true}
+        sfxHit();
       }
     }
   }
+  return false;
 }
 
 function update(dt){
@@ -3189,7 +3339,8 @@ function update(dt){
   S.flavour=Math.floor(Math.max(0,S.t-110)/6)%3;
 
   const patternBusy=updatePatternDirector(worldDt,d);
-  S.spawnBank+=worldDt*d.rate*(patternBusy?.28:1);
+  // Let authored patterns read as patterns instead of burying them in ambient traffic.
+  S.spawnBank+=worldDt*d.rate*(patternBusy?.08:1);
   while(S.spawnBank>=1&&S.missiles.length<d.cap){
     S.spawnBank-=1;
     spawnMissile();
@@ -3209,6 +3360,7 @@ function update(dt){
   }
 
   for(const m of S.missiles){
+    m.prevX=m.x;m.prevY=m.y;
     m.age+=worldDt;
 
     // During BREAKOUT the expanding ring genuinely pushes threats away.
@@ -3287,10 +3439,13 @@ function update(dt){
     if(m.trail.length>((m.type==='dart'||m.type==='lance') ? 22 : 34))m.trail.shift();
     for(const p of m.trail)p.life-=worldDt;
 
-    const dx=m.x-player.x,dy=m.y-player.y;
-    const dist=Math.hypot(dx,dy);
-
-    if(!m.near&&dist<nearRadius()&&dist>hitRadius()+enemyRadius(m)+4/Math.max(.28,S.cameraScale)){
+    const rx0=m.prevX-S.playerFrameX,ry0=m.prevY-S.playerFrameY;
+    const rx1=m.x-player.x,ry1=m.y-player.y;
+    const dangerRadius=hitRadius()+enemyRadius(m)+1/Math.max(.28,S.cameraScale);
+    const nearMin=segmentMinDistanceSq(rx0,ry0,rx1,ry1);
+    if(!m.near && sweptCircleTOI(rx0,ry0,rx1,ry1,dangerRadius)<0 &&
+       nearMin<nearRadius()*nearRadius() &&
+       nearMin>Math.pow(dangerRadius+4/Math.max(.28,S.cameraScale),2)){
       m.near=true;S.near++;
       rewardSkill(.60,.14,1.82);
       S.score+=125*S.combo;
@@ -3303,31 +3458,6 @@ function update(dt){
       musicalSkillHit('near',1);
     }
 
-    if(!m.dead&&dist<hitRadius()+enemyRadius(m)+1/Math.max(.28,S.cameraScale)){
-      m.dead=true;
-      burst(m.x,m.y,S.zoomStage>=4?22:16,m.color,S.zoomStage>=4?1.22:1.05);
-      shockwave(m.x,m.y,m.color,S.zoomStage>=4?1.10:.9);
-      explosionBloom(m.x,m.y,m.color,S.zoomStage>=4?1.12:.82);
-      sfxExplosion(1,m.x,S.zoomStage);
-      S.shake=S.zoomStage>=4?10:8;
-
-      if(S.dashT>0){
-        rewardSkill(.48,.18,1.90);
-        S.score+=260*S.combo;
-        floatText(player.x,player.y-18,'DASH BREAK','#bffcff');
-        musicalSkillHit('dashKill',1);
-      }else if(S.invuln<=0){
-        player.hp--;
-        S.invuln=.68;
-        S.damageFlash=1;
-        breakFlow();
-        S.shieldRegenDelay=6.5;
-        S.shieldRegenProgress=0;
-        if(player.hp<=0){gameOver();return}
-        sfxHit();
-      }
-    }
-
     const b=worldBounds();
     const q=205/Math.max(.28,S.cameraScale);
     if(m.age>m.maxAge){
@@ -3337,32 +3467,15 @@ function update(dt){
     if((m.x<b.left-q||m.x>b.right+q||m.y<b.top-q||m.y>b.bottom+q)&&m.age>2.5)m.dead=true;
   }
 
-  missileVsMissile();
-  S.missiles=S.missiles.filter(m=>!m.dead);
+  // Process all moving threats before resolving impacts chronologically.
 
   // Bullets: simple, fast, cheap to render. They pressure empty zones in deep orbit.
   for(const b of S.bullets){
+    b.prevX=b.x;b.prevY=b.y;
     b.age+=worldDt;
     b.x+=b.vx*worldDt;
     b.y+=b.vy*worldDt;
 
-    const dx=b.x-player.x,dy=b.y-player.y;
-    const dist=Math.hypot(dx,dy);
-
-    if(!b.dead && dist<hitRadius()+b.r){
-      b.dead=true;
-      burst(b.x,b.y,7,b.color,.45);
-      if(S.invuln<=0 && S.dashT<=0){
-        player.hp--;
-        S.invuln=.64;
-        S.damageFlash=1;
-        breakFlow();
-        S.shieldRegenDelay=6.5;
-        S.shieldRegenProgress=0;
-        if(player.hp<=0){gameOver();return}
-        sfxHit();
-      }
-    }
 
     const wb=worldBounds();
     const q=95/Math.max(.28,S.cameraScale);
@@ -3370,7 +3483,10 @@ function update(dt){
       b.dead=true;
     }
   }
+  if(resolveCombatCollisions(S.playerFrameX,S.playerFrameY))return;
+  S.missiles=S.missiles.filter(m=>!m.dead);
   S.bullets=S.bullets.filter(b=>!b.dead);
+  S.playerFrameX=player.x;S.playerFrameY=player.y;
 
   for(const w of S.shockwaves){
     w.life-=dt;
@@ -3499,16 +3615,20 @@ function ribbon(points,color,width,alpha=.9){
   ctx.restore();
 }
 
-function drawRocket(x,y,a,scale,color,isPlayer=false){
+function drawRocket(x,y,a,scale,color,isPlayer=false,type='basic'){
   ctx.save();
   ctx.translate(x,y);
   ctx.rotate(a);
   ctx.scale(scale,scale);
 
-  const L=isPlayer?30:23;
-  const B=isPlayer?6.1:4.7;
+  // Enemy profiles share one visual language but expose readable silhouettes.
+  // No hitboxes or movement rules are affected by these cosmetic profiles.
+  const narrow=type==='dart'||type==='lance';
+  const broad=type==='hook'||type==='tracker';
+  const L=isPlayer?30:(narrow?26:(type==='predictor'?25:23));
+  const B=isPlayer?6.1:(narrow?3.7:(broad?5.35:4.7));
   const rear=-L*.44;
-  const nose=L*.56;
+  const nose=L*(type==='interceptor'?.68:.56);
   const lateEnemy=!isPlayer&&S.zoomStage>=4;
 
   // FIELD V: restrained halo, crisp silhouette, white-hot focal point.
@@ -3550,6 +3670,39 @@ function drawRocket(x,y,a,scale,color,isPlayer=false){
   ctx.quadraticCurveTo(L*.29,B,nose,0);
   ctx.closePath();
   ctx.fill();
+
+  if(!isPlayer){
+    ctx.save();
+    ctx.strokeStyle=lateEnemy?'#e7f6ff':color;
+    ctx.lineWidth=1.5;
+    ctx.shadowColor=color;
+    ctx.shadowBlur=lateEnemy?5:3;
+    ctx.beginPath();
+    if(type==='hook'){
+      // Outward swept rear fins indicate the late-turn hunter.
+      ctx.moveTo(rear+1,-B*.45);ctx.lineTo(rear-L*.26,-B*1.75);
+      ctx.moveTo(rear+1,B*.45);ctx.lineTo(rear-L*.26,B*1.75);
+    }else if(type==='tracker'){
+      // Twin long rails distinguish the persistent chaser.
+      ctx.moveTo(rear*.60,-B*1.3);ctx.lineTo(L*.29,-B*1.25);
+      ctx.moveTo(rear*.60,B*1.3);ctx.lineTo(L*.29,B*1.25);
+    }else if(type==='predictor'){
+      // Angled front canards, visually separate from the basic projectile.
+      ctx.moveTo(L*.18,-B*.8);ctx.lineTo(L*.36,-B*1.58);
+      ctx.moveTo(L*.18,B*.8);ctx.lineTo(L*.36,B*1.58);
+    }else if(type==='interceptor'){
+      // Short rear stabilisers and an elongated forward nose.
+      ctx.moveTo(rear*.75,-B*.9);ctx.lineTo(rear-L*.08,-B*1.5);
+      ctx.moveTo(rear*.75,B*.9);ctx.lineTo(rear-L*.08,B*1.5);
+    }else if(type==='lance'){
+      ctx.moveTo(rear+1,0);ctx.lineTo(nose+L*.18,0);
+    }else if(type==='dart'){
+      ctx.moveTo(rear,-B*1.15);ctx.lineTo(L*.02,-B*1.15);
+      ctx.moveTo(rear,B*1.15);ctx.lineTo(L*.02,B*1.15);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
 
   ctx.shadowBlur=3;
   ctx.fillStyle=isPlayer?'#112134':(lateEnemy?'#111521':'#19162a');
@@ -4226,7 +4379,7 @@ function draw(){
   for(const m of S.missiles){
     const rs=((m.type==='dart'||m.type==='lance') ? .68 : .74);
     const visualColor=S.zoomStage>=4?lateFieldColor(m.color):m.color;
-    drawRocket(m.x,m.y,m.angle,rs,visualColor,false);
+    drawRocket(m.x,m.y,m.angle,rs,visualColor,false,m.type);
   }
 
   // Deep-orbit bullets: tiny bright kinetic streaks, visually distinct from rockets.
