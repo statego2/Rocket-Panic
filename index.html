@@ -1795,7 +1795,14 @@ function hud(){
   comboEl.textContent='×'+S.combo.toFixed(1);
   timeEl.textContent=S.t.toFixed(1)+'s';
   stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0];
-  [...healthEl.children].forEach((e,i)=>e.classList.toggle('off',i>=player.hp));
+  [...healthEl.children].forEach((e,i)=>{
+    e.classList.toggle('off',i>=player.hp);
+    if(i===player.hp && player.hp<3 && S.shieldRegenDelay<=0){
+      const progress=clamp(S.shieldRegenProgress/10,0,1);
+      e.style.opacity=String(.35+.65*progress);
+      e.style.boxShadow='inset '+Math.round(progress*15)+'px 0 0 rgba(92,248,255,.7)';
+    }else{e.style.opacity='';e.style.boxShadow='';}
+  });
 }
 
 function reset(){
@@ -2083,21 +2090,21 @@ function updateDeathScene(dt){
 function difficulty(){
   const t=S.t;
   const stage=zoomStageForTime(t);
-  const thresholds=[0,24,52,82,115];
+  const thresholds=[0,20,47,77,110];
   const age=t-thresholds[stage];
 
   const base=[
     {rate:.52, speed:160, turn:1.76, cap:6},
     {rate:.98, speed:190, turn:1.72, cap:13},
-    {rate:1.56, speed:218, turn:1.64, cap:22},
-    {rate:2.12, speed:246, turn:1.56, cap:34},
-    {rate:2.86, speed:280, turn:1.50, cap:46}
+    {rate:1.52, speed:225, turn:1.64, cap:18},
+    {rate:2.04, speed:255, turn:1.56, cap:26},
+    {rate:2.62, speed:295, turn:1.50, cap:32}
   ][stage];
 
-  let rate=base.rate + age*(stage<4 ? .014 : .026);
+  let rate=base.rate + age*(stage<4 ? .012 : .012);
   let speed=base.speed + age*(stage<4 ? .58 : 1.08);
   let turn=base.turn;
-  let cap=base.cap + Math.floor(age*(stage<4 ? .12 : .27));
+  let cap=base.cap + Math.floor(age*(stage<4 ? .065 : .075));
 
   if(stage>0 && age<4.0){
     const ramp=.72 + .28*(age/4.0);
@@ -2106,14 +2113,27 @@ function difficulty(){
   }
 
   // No practical plateau at ~200s anymore.
-  cap=Math.min(74,cap);
+  cap=Math.min(stage===4?44:32,cap);
   speed=Math.min(470,speed);
-  rate=Math.min(6.2,rate);
+  rate=Math.min(4.3,rate);
 
+  // Invisible tension and release: 10 seconds of pressure, 2.5 seconds of breath.
+  const cycle=(t+2.5)%12.5;
+  if(cycle>=10)rate*=.57;
+  else rate*=.91+.09*(cycle/10);
   return {rate,speed,turn,cap};
 }
 
 function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+// Gameplay radii are authored in visible pixels, independently of camera zoom.
+const FIELD_GEOMETRY=[
+  {hit:11,near:45},{hit:10,near:40},{hit:9,near:35},
+  {hit:7.5,near:29},{hit:6,near:23}
+];
+function hitRadius(){return FIELD_GEOMETRY[S.zoomStage].hit/Math.max(.28,S.cameraScale)}
+function nearRadius(){return FIELD_GEOMETRY[S.zoomStage].near/Math.max(.28,S.cameraScale)}
+function enemyRadius(m){return (m.r*.85)/Math.max(.28,S.cameraScale)}
 
 
 function smoothstep(a,b,x){
@@ -2122,10 +2142,10 @@ function smoothstep(a,b,x){
 }
 
 function zoomStageForTime(t=S.t){
-  if(t<24) return 0;
-  if(t<52) return 1;
-  if(t<82) return 2;
-  if(t<115) return 3;
+  if(t<20) return 0;
+  if(t<47) return 1;
+  if(t<77) return 2;
+  if(t<110) return 3;
   return 4;
 }
 
@@ -2252,7 +2272,7 @@ function spawnMissile(){
   const pred=predictPlayer(leadTime);
   const angle=Math.atan2(pred.y-y,pred.x-x);
 
-  const lateLife=S.zoomStage===4 ? (2.05 + Math.min(1.15,S.stageAge/95)) : 1.0;
+  const lateLife=S.zoomStage===4 ? (1.10 + Math.min(.20,S.stageAge/180)) : 1.0;
 
   S.missiles.push({
     x,y,angle,speed,turn,color,r,type,
@@ -2411,6 +2431,10 @@ function applyRelativeMove(dx,dy){
 }
 
 function pointerDown(e){
+  if(S.deathMode && !S.deathResolved){
+    if(S.deathTimer>=.7){S.deathTimer=S.deathDuration;updateDeathScene(0);}
+    e.preventDefault();return;
+  }
   if(!S.running)return;
   e.preventDefault();
 
@@ -2523,7 +2547,7 @@ function missileVsMissile(){
     for(let j=i+1;j<a.length;j++){
       if(a[j].dead)continue;
       const dx=a[i].x-a[j].x,dy=a[i].y-a[j].y;
-      const rr=a[i].r+a[j].r+1;
+      const rr=enemyRadius(a[i])+enemyRadius(a[j])+1/Math.max(.28,S.cameraScale);
       if(dx*dx+dy*dy<rr*rr){
         a[i].dead=a[j].dead=true;
         const x=(a[i].x+a[j].x)/2,y=(a[i].y+a[j].y)/2;
@@ -2650,6 +2674,8 @@ function update(dt){
 
   const d=difficulty();
   updateAudio();
+  // FIELD V rotates its dominant enemy flavour every six seconds.
+  S.flavour=Math.floor(Math.max(0,S.t-110)/6)%3;
   S.spawnBank+=dt*d.rate;
   while(S.spawnBank>=1&&S.missiles.length<d.cap){
     S.spawnBank-=1;
@@ -2751,7 +2777,7 @@ function update(dt){
     const dx=m.x-player.x,dy=m.y-player.y;
     const dist=Math.hypot(dx,dy);
 
-    if(!m.near&&dist<45&&dist>player.r+m.r+4){
+    if(!m.near&&dist<nearRadius()&&dist>hitRadius()+enemyRadius(m)+4/Math.max(.28,S.cameraScale)){
       m.near=true;S.near++;
       S.combo=Math.min(9,S.combo+.58);
       S.comboHold=1.7;
@@ -2761,7 +2787,7 @@ function update(dt){
       sfxNear();
     }
 
-    if(!m.dead&&dist<player.r+m.r+1){
+    if(!m.dead&&dist<hitRadius()+enemyRadius(m)+1/Math.max(.28,S.cameraScale)){
       m.dead=true;
       burst(m.x,m.y,S.zoomStage>=4?22:16,m.color,S.zoomStage>=4?1.22:1.05);
       shockwave(m.x,m.y,m.color,S.zoomStage>=4?1.10:.9);
@@ -2804,10 +2830,10 @@ function update(dt){
     const dx=b.x-player.x,dy=b.y-player.y;
     const dist=Math.hypot(dx,dy);
 
-    if(!b.dead && dist<player.r+b.r){
+    if(!b.dead && dist<hitRadius()+b.r){
       b.dead=true;
       burst(b.x,b.y,7,b.color,.45);
-      if(S.invuln<=0){
+      if(S.invuln<=0 && S.dashT<=0){
         player.hp--;
         S.invuln=.64;
         S.damageFlash=1;
