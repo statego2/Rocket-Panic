@@ -2324,6 +2324,14 @@ function gameOver(){
   S.deathScore=Math.floor(S.score);
   S.deathTime=S.t;
   S.deathSpawnBank=0;
+  // Lightweight QA diagnostics for distinguishing steered from passive chains.
+  console.info('Rocket Panic run interactions',{
+    steeredCollisions:S.collisions.steered,
+    passiveCollisions:S.collisions.passive,
+    dashBreaks:S.collisions.dash,
+    field:S.zoomStage+1,
+    elapsedSeconds:+S.t.toFixed(1)
+  });
 
   control.active=false;
   control.primaryId=null;
@@ -2769,7 +2777,8 @@ function updatePatternDirector(dt,d){
 
   S.nextPattern-=dt;
   if(!busy && S.nextPattern<=0 && S.zoomStage>=1 && !d.breath &&
-     d.pressure>.84 && S.breakoutSafety<=0 && S.missiles.length<d.cap-3){
+     d.pressure>.84 && S.breakoutSafety<=0 &&
+     S.missiles.length<Math.min(d.cap-3,Math.max(4,d.cap*.58))){
     busy=beginThreatPattern();
     S.nextPattern=Math.max(4.0,6.9-S.zoomStage*.48)+Math.random()*1.6;
   }
@@ -3014,6 +3023,38 @@ function dash(){
   }
   if(player.trail.length>72)player.trail.splice(0,player.trail.length-72);
 
+  // A dash is an instantaneous swept attack. Resolve the *real path now*, not
+  // just its destination at the next animation frame. This still works if
+  // another finger movement follows before requestAnimationFrame.
+  const scale=Math.max(.28,S.cameraScale);
+  for(const m of S.missiles){
+    if(m.dead)continue;
+    const rr=hitRadius()+enemyRadius(m)+1/scale;
+    const t=sweptCircleTOI(m.x-oldX,m.y-oldY,m.x-player.x,m.y-player.y,rr);
+    if(t<0)continue;
+    m.dead=true;
+    const x=oldX+(player.x-oldX)*t;
+    const y=oldY+(player.y-oldY)*t;
+    burst(x,y,S.zoomStage>=4?22:16,m.color,S.zoomStage>=4?1.22:1.05);
+    shockwave(x,y,m.color,S.zoomStage>=4?1.10:.9);
+    explosionBloom(x,y,m.color,S.zoomStage>=4?1.12:.82);
+    sfxExplosion(1,x,S.zoomStage);
+    S.shake=Math.max(S.shake,S.zoomStage>=4?10:8);
+    rewardSkill(.48,.18,1.90);
+    S.score+=260*S.combo;
+    S.collisions.dash++;
+    floatText(x,y-18,'DASH BREAK','#bffcff');
+    musicalSkillHit('dashKill',1);
+  }
+  // Crossing a bullet during a dash also consumes it without taking damage.
+  for(const b of S.bullets){
+    if(b.dead)continue;
+    if(sweptCircleTOI(b.x-oldX,b.y-oldY,b.x-player.x,b.y-player.y,hitRadius()+b.r)>=0){
+      b.dead=true;
+      burst(b.x,b.y,7,b.color,.45);
+    }
+  }
+
   burst(player.x,player.y,18,'#5cf8ff',.75);
   sfxDash();
   S.shake=3;
@@ -3102,7 +3143,7 @@ function resolveCombatCollisions(px0,py0){
       const playerAtX=px0+(player.x-px0)*e.t;
       const playerAtY=py0+(player.y-py0)*e.t;
       const screenDist=Math.hypot(x-playerAtX,y-playerAtY)*scale;
-      const steered=screenDist<180||m.near||n.near;
+      const steered=screenDist<220&&(m.near||n.near);
       if(steered){
         S.collisions.steered++;
         rewardSkill(.36,.16,1.82);
@@ -3298,7 +3339,8 @@ function update(dt){
   S.flavour=Math.floor(Math.max(0,S.t-110)/6)%3;
 
   const patternBusy=updatePatternDirector(worldDt,d);
-  S.spawnBank+=worldDt*d.rate*(patternBusy?.28:1);
+  // Let authored patterns read as patterns instead of burying them in ambient traffic.
+  S.spawnBank+=worldDt*d.rate*(patternBusy?.08:1);
   while(S.spawnBank>=1&&S.missiles.length<d.cap){
     S.spawnBank-=1;
     spawnMissile();
@@ -3573,16 +3615,20 @@ function ribbon(points,color,width,alpha=.9){
   ctx.restore();
 }
 
-function drawRocket(x,y,a,scale,color,isPlayer=false){
+function drawRocket(x,y,a,scale,color,isPlayer=false,type='basic'){
   ctx.save();
   ctx.translate(x,y);
   ctx.rotate(a);
   ctx.scale(scale,scale);
 
-  const L=isPlayer?30:23;
-  const B=isPlayer?6.1:4.7;
+  // Enemy profiles share one visual language but expose readable silhouettes.
+  // No hitboxes or movement rules are affected by these cosmetic profiles.
+  const narrow=type==='dart'||type==='lance';
+  const broad=type==='hook'||type==='tracker';
+  const L=isPlayer?30:(narrow?26:(type==='predictor'?25:23));
+  const B=isPlayer?6.1:(narrow?3.7:(broad?5.35:4.7));
   const rear=-L*.44;
-  const nose=L*.56;
+  const nose=L*(type==='interceptor'?.68:.56);
   const lateEnemy=!isPlayer&&S.zoomStage>=4;
 
   // FIELD V: restrained halo, crisp silhouette, white-hot focal point.
@@ -3624,6 +3670,39 @@ function drawRocket(x,y,a,scale,color,isPlayer=false){
   ctx.quadraticCurveTo(L*.29,B,nose,0);
   ctx.closePath();
   ctx.fill();
+
+  if(!isPlayer){
+    ctx.save();
+    ctx.strokeStyle=lateEnemy?'#e7f6ff':color;
+    ctx.lineWidth=1.5;
+    ctx.shadowColor=color;
+    ctx.shadowBlur=lateEnemy?5:3;
+    ctx.beginPath();
+    if(type==='hook'){
+      // Outward swept rear fins indicate the late-turn hunter.
+      ctx.moveTo(rear+1,-B*.45);ctx.lineTo(rear-L*.26,-B*1.75);
+      ctx.moveTo(rear+1,B*.45);ctx.lineTo(rear-L*.26,B*1.75);
+    }else if(type==='tracker'){
+      // Twin long rails distinguish the persistent chaser.
+      ctx.moveTo(rear*.60,-B*1.3);ctx.lineTo(L*.29,-B*1.25);
+      ctx.moveTo(rear*.60,B*1.3);ctx.lineTo(L*.29,B*1.25);
+    }else if(type==='predictor'){
+      // Angled front canards, visually separate from the basic projectile.
+      ctx.moveTo(L*.18,-B*.8);ctx.lineTo(L*.36,-B*1.58);
+      ctx.moveTo(L*.18,B*.8);ctx.lineTo(L*.36,B*1.58);
+    }else if(type==='interceptor'){
+      // Short rear stabilisers and an elongated forward nose.
+      ctx.moveTo(rear*.75,-B*.9);ctx.lineTo(rear-L*.08,-B*1.5);
+      ctx.moveTo(rear*.75,B*.9);ctx.lineTo(rear-L*.08,B*1.5);
+    }else if(type==='lance'){
+      ctx.moveTo(rear+1,0);ctx.lineTo(nose+L*.18,0);
+    }else if(type==='dart'){
+      ctx.moveTo(rear,-B*1.15);ctx.lineTo(L*.02,-B*1.15);
+      ctx.moveTo(rear,B*1.15);ctx.lineTo(L*.02,B*1.15);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
 
   ctx.shadowBlur=3;
   ctx.fillStyle=isPlayer?'#112134':(lateEnemy?'#111521':'#19162a');
@@ -4300,7 +4379,7 @@ function draw(){
   for(const m of S.missiles){
     const rs=((m.type==='dart'||m.type==='lance') ? .68 : .74);
     const visualColor=S.zoomStage>=4?lateFieldColor(m.color):m.color;
-    drawRocket(m.x,m.y,m.angle,rs,visualColor,false);
+    drawRocket(m.x,m.y,m.angle,rs,visualColor,false,m.type);
   }
 
   // Deep-orbit bullets: tiny bright kinetic streaks, visually distinct from rockets.
