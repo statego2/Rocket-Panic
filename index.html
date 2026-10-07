@@ -865,7 +865,16 @@ function fadeAudioForMenu(){
 
 
 function shockwave(x,y,color='#fff',power=1){
-  S.shockwaves.push({x,y,r:10,maxR:95*power,life:.45,max:.45,color,width:2.0});
+  const epic=S.zoomStage>=4;
+  const life=epic?.62:.45;
+  S.shockwaves.push({
+    x,y,r:10,
+    maxR:(epic?145:95)*power,
+    life,max:life,
+    color,
+    width:epic?2.7:2.0,
+    epic
+  });
 }
 
 soundToggleEl.addEventListener('click',()=>{
@@ -1198,14 +1207,51 @@ function spawnBullet(){
 }
 
 function burst(x,y,n,color,power=1){
-  for(let i=0;i<n;i++){
+  const epic=S.zoomStage>=4;
+  const cameraComp=epic?1/Math.max(.28,S.cameraScale):1;
+  const count=epic?Math.ceil(n*1.28):n;
+
+  for(let i=0;i<count;i++){
     const a=Math.random()*TAU;
-    const sp=(35+Math.random()*175)*power;
+    const sp=(35+Math.random()*(epic?215:175))*power*cameraComp;
+    const baseSize=(epic?.95:.7)+Math.random()*(epic?3.0:2.6);
+    const life=(epic?.28:.22)+Math.random()*(epic?.58:.46);
     S.particles.push({
-      x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
-      life:.22+Math.random()*.46,max:.68,color,size:.7+Math.random()*2.6
+      x,y,
+      vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life,max:epic?.86:.68,
+      color,
+      size:baseSize*cameraComp
     });
   }
+
+  // A few white-hot fragments make late explosions read as energy, not confetti.
+  if(epic && power>.6){
+    for(let i=0;i<6;i++){
+      const a=Math.random()*TAU;
+      const sp=(95+Math.random()*205)*power*cameraComp;
+      S.particles.push({
+        x,y,
+        vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+        life:.24+Math.random()*.28,max:.52,
+        color:'#fff8df',
+        size:(.9+Math.random()*1.5)*cameraComp
+      });
+    }
+  }
+}
+
+function explosionBloom(x,y,color,power=1){
+  if(S.zoomStage<3)return;
+  const epic=S.zoomStage>=4;
+  S.particles.push({
+    bloom:true,
+    x,y,vx:0,vy:0,
+    life:epic?.44:.28,
+    max:epic?.44:.28,
+    color,
+    radius:(epic?128:76)*power
+  });
 }
 
 function floatText(x,y,text,color='#fff'){
@@ -1379,8 +1425,9 @@ function missileVsMissile(){
       if(dx*dx+dy*dy<rr*rr){
         a[i].dead=a[j].dead=true;
         const x=(a[i].x+a[j].x)/2,y=(a[i].y+a[j].y)/2;
-        burst(x,y,14,'#ff78d8',1.1);
-        shockwave(x,y,'#ff78d8',.75);
+        burst(x,y,S.zoomStage>=4?19:14,'#ff78d8',S.zoomStage>=4?1.24:1.1);
+        shockwave(x,y,'#ff78d8',S.zoomStage>=4?.95:.75);
+        explosionBloom(x,y,'#ff78d8',S.zoomStage>=4?1.0:.70);
         sfxExplosion(.8);
         S.score+=155*S.combo;
         S.combo=Math.min(9,S.combo+.3);
@@ -1610,10 +1657,11 @@ function update(dt){
 
     if(!m.dead&&dist<player.r+m.r+1){
       m.dead=true;
-      burst(m.x,m.y,16,m.color,1.05);
-      shockwave(m.x,m.y,m.color,.9);
+      burst(m.x,m.y,S.zoomStage>=4?22:16,m.color,S.zoomStage>=4?1.22:1.05);
+      shockwave(m.x,m.y,m.color,S.zoomStage>=4?1.10:.9);
+      explosionBloom(m.x,m.y,m.color,S.zoomStage>=4?1.12:.82);
       sfxExplosion(1);
-      S.shake=8;
+      S.shake=S.zoomStage>=4?10:8;
 
       if(S.dashT>0){
         S.score+=180*S.combo;
@@ -1683,7 +1731,9 @@ function update(dt){
   for(const p of S.particles){
     p.life-=dt;
     if(p.text)p.y+=p.vy*dt;
-    else{
+    else if(p.bloom){
+      // Screen-space light bloom: intentionally stationary and very short lived.
+    }else{
       p.x+=p.vx*dt;p.y+=p.vy*dt;
       p.vx*=Math.pow(.12,dt);p.vy*=Math.pow(.12,dt);
     }
@@ -1744,31 +1794,39 @@ function ribbon(points,color,width,alpha=.9){
   const p=points.filter(q=>q.life>0);
   if(p.length<2)return;
 
+  const epic=S.zoomStage>=4;
+  const visualComp=epic?1/Math.max(.28,S.cameraScale):1;
+  const w=width*visualComp;
+
   ctx.save();
   ctx.lineCap='round';
   ctx.lineJoin='round';
-
-  ctx.globalAlpha=alpha*.13;
   ctx.strokeStyle=color;
-  ctx.lineWidth=width*5.0;
-  ctx.shadowBlur=9;
   ctx.shadowColor=color;
+
+  // Broad additive bloom: this is what lets missile paths paint the deep-orbit frame.
+  if(epic)ctx.globalCompositeOperation='lighter';
+  ctx.globalAlpha=alpha*(epic?.18:.13);
+  ctx.lineWidth=w*(epic?5.8:5.0);
+  ctx.shadowBlur=epic?14:9;
   ctx.beginPath();
   ctx.moveTo(p[0].x,p[0].y);
   for(let i=1;i<p.length;i++)ctx.lineTo(p[i].x,p[i].y);
   ctx.stroke();
 
-  ctx.globalAlpha=alpha*.42;
-  ctx.lineWidth=width*2.2;
-  ctx.shadowBlur=3;
+  ctx.globalAlpha=alpha*(epic?.50:.42);
+  ctx.lineWidth=w*(epic?2.45:2.2);
+  ctx.shadowBlur=epic?5:3;
   ctx.beginPath();
   ctx.moveTo(p[0].x,p[0].y);
   for(let i=1;i<p.length;i++)ctx.lineTo(p[i].x,p[i].y);
   ctx.stroke();
 
-  ctx.globalAlpha=alpha;
-  ctx.lineWidth=width;
-  ctx.shadowBlur=5;
+  // Crisp coloured core prevents the glow from becoming mushy.
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=Math.min(1,alpha*(epic?1.08:1));
+  ctx.lineWidth=w*(epic?1.05:1);
+  ctx.shadowBlur=epic?7:5;
   ctx.beginPath();
   ctx.moveTo(p[0].x,p[0].y);
   for(let i=1;i<p.length;i++)ctx.lineTo(p[i].x,p[i].y);
@@ -1786,8 +1844,32 @@ function drawRocket(x,y,a,scale,color,isPlayer=false){
   const B=isPlayer?6.1:4.7;
   const rear=-L*.44;
   const nose=L*.56;
+  const lateEnemy=!isPlayer&&S.zoomStage>=4;
 
-  ctx.shadowBlur=isPlayer?18:(S.zoomStage>=4?26:(S.zoomStage>=3?19:11));
+  // FIELD V: a restrained additive silhouette halo, then the normal crisp rocket on top.
+  if(lateEnemy){
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.globalAlpha=.22;
+    ctx.shadowBlur=34;
+    ctx.shadowColor=color;
+    ctx.fillStyle=color;
+    ctx.beginPath();
+    ctx.moveTo(nose+1,0);
+    ctx.quadraticCurveTo(L*.29,-B*1.04,L*.04,-B*.92);
+    ctx.lineTo(rear,-B*.78);
+    ctx.lineTo(rear-L*.13,-B*1.50);
+    ctx.lineTo(rear+L*.04,0);
+    ctx.lineTo(rear-L*.13,B*1.50);
+    ctx.lineTo(rear,B*.78);
+    ctx.lineTo(L*.04,B*.92);
+    ctx.quadraticCurveTo(L*.29,B*1.04,nose+1,0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.shadowBlur=isPlayer?18:(lateEnemy?30:(S.zoomStage>=3?19:11));
   ctx.shadowColor=color;
 
   ctx.fillStyle=color;
@@ -1806,7 +1888,7 @@ function drawRocket(x,y,a,scale,color,isPlayer=false){
   ctx.fill();
 
   ctx.shadowBlur=4;
-  ctx.fillStyle=isPlayer?'#112134':'#19162a';
+  ctx.fillStyle=isPlayer?'#112134':(lateEnemy?'#10101d':'#19162a');
   ctx.beginPath();
   ctx.moveTo(nose-L*.12,0);
   ctx.lineTo(L*.02,-B*.44);
@@ -1816,9 +1898,10 @@ function drawRocket(x,y,a,scale,color,isPlayer=false){
   ctx.closePath();
   ctx.fill();
 
-  ctx.shadowBlur=isPlayer?5:(S.zoomStage>=4?12:6);
-  ctx.shadowColor=color;
-  ctx.fillStyle='#efffff';
+  // White-hot nose gives every FIELD V threat a readable focal point.
+  ctx.shadowBlur=lateEnemy?14:(isPlayer?5:(S.zoomStage>=4?12:6));
+  ctx.shadowColor=lateEnemy?'#ffffff':color;
+  ctx.fillStyle=lateEnemy?'#ffffff':'#efffff';
   ctx.beginPath();
   ctx.moveTo(nose-L*.04,0);
   ctx.lineTo(L*.18,-B*.23);
@@ -1827,27 +1910,32 @@ function drawRocket(x,y,a,scale,color,isPlayer=false){
   ctx.fill();
 
   ctx.fillStyle=color;
+  ctx.shadowColor=color;
+  ctx.shadowBlur=lateEnemy?10:4;
   ctx.fillRect(-L*.03,-B*.30,L*.17,B*.60);
 
   ctx.fillStyle='#f8ffff';
   ctx.shadowColor='#fff';
-  ctx.shadowBlur=8;
+  ctx.shadowBlur=lateEnemy?12:8;
   ctx.fillRect(rear-L*.01,-B*.31,L*.08,B*.62);
 
-  ctx.shadowColor='#ff9b38';
-  ctx.shadowBlur=18;
-  ctx.fillStyle='#ff9b38';
+  const flameMul=lateEnemy?1.42:1;
+  ctx.shadowColor=lateEnemy?'#ffbd66':'#ff9b38';
+  ctx.shadowBlur=lateEnemy?27:18;
+  ctx.fillStyle=lateEnemy?'#ffb24f':'#ff9b38';
   ctx.beginPath();
   ctx.moveTo(rear-L*.02,-B*.30);
-  ctx.lineTo(rear-L*(isPlayer?.34:.28)-Math.random()*3,0);
+  ctx.lineTo(rear-L*((isPlayer?.34:.28)*flameMul)-Math.random()*(lateEnemy?4.5:3),0);
   ctx.lineTo(rear-L*.02,B*.30);
   ctx.closePath();
   ctx.fill();
 
-  ctx.fillStyle='#fff4c8';
+  ctx.fillStyle='#fff7d6';
+  ctx.shadowColor='#fff4cb';
+  ctx.shadowBlur=lateEnemy?14:7;
   ctx.beginPath();
   ctx.moveTo(rear-L*.02,-B*.13);
-  ctx.lineTo(rear-L*.20-Math.random()*2,0);
+  ctx.lineTo(rear-L*(.20*flameMul)-Math.random()*(lateEnemy?3:2),0);
   ctx.lineTo(rear-L*.02,B*.13);
   ctx.closePath();
   ctx.fill();
@@ -2338,14 +2426,23 @@ function draw(){
   for(const w of S.shockwaves){
     const a=Math.max(0,w.life/w.max);
     ctx.save();
-    ctx.globalAlpha=a*.48;
+    if(w.epic)ctx.globalCompositeOperation='lighter';
+    ctx.globalAlpha=a*(w.epic?.55:.48);
     ctx.strokeStyle=w.color;
     ctx.lineWidth=(w.width||2)/Math.max(.28,S.cameraScale);
-    ctx.shadowBlur=12;
+    ctx.shadowBlur=w.epic?18:12;
     ctx.shadowColor=w.color;
     ctx.beginPath();
     ctx.arc(w.x,w.y,w.r/Math.max(.28,S.cameraScale),0,TAU);
     ctx.stroke();
+
+    if(w.epic){
+      ctx.globalAlpha=a*.20;
+      ctx.lineWidth=1.1/Math.max(.28,S.cameraScale);
+      ctx.beginPath();
+      ctx.arc(w.x,w.y,(w.r*.70)/Math.max(.28,S.cameraScale),0,TAU);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -2395,6 +2492,7 @@ function draw(){
   for(const p of S.particles){
     const pa=Math.max(0,p.life/(p.max||.68));
     ctx.globalAlpha=Math.min(1,pa);
+
     if(p.text){
       ctx.fillStyle=p.color;
       ctx.font='900 9px ui-monospace,monospace';
@@ -2402,9 +2500,25 @@ function draw(){
       ctx.shadowBlur=6;
       ctx.shadowColor=p.color;
       ctx.fillText(p.text,p.x,p.y);
+
+    }else if(p.bloom){
+      // Large, short-lived colour wash. Radius is screen-space compensated.
+      const r=(p.radius||90)/Math.max(.28,S.cameraScale);
+      const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r);
+      g.addColorStop(0,'#ffffff');
+      g.addColorStop(.10,p.color);
+      g.addColorStop(.42,p.color);
+      g.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.globalAlpha=pa*(S.zoomStage>=4?.26:.15);
+      ctx.fillStyle=g;
+      ctx.fillRect(p.x-r,p.y-r,r*2,r*2);
+      ctx.restore();
+
     }else{
       ctx.fillStyle=p.color;
-      ctx.shadowBlur=5;
+      ctx.shadowBlur=S.zoomStage>=4?9:5;
       ctx.shadowColor=p.color;
       ctx.beginPath();
       ctx.arc(p.x,p.y,p.size,0,TAU);
