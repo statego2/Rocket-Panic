@@ -352,10 +352,10 @@ function musicVoice(freq,start,dur,vol=.03,type='triangle',cutoff=1400,opts={}){
 
   f.type=opts.filterType||'lowpass';
   f.frequency.setValueAtTime(Math.max(80,cutoff),start);
-  f.Q.value=opts.q==null?.7:opts.q;
+  f.Q.value=opts.q==null ? .7 : opts.q;
 
-  const attack=opts.attack==null?.010:opts.attack;
-  const release=opts.release==null?.10:opts.release;
+  const attack=opts.attack==null ? .010 : opts.attack;
+  const release=opts.release==null ? .10 : opts.release;
   g.gain.setValueAtTime(.0001,start);
   g.gain.exponentialRampToValueAtTime(Math.max(.0002,vol),start+Math.max(.004,attack));
   if(dur>attack+release+.01){
@@ -374,7 +374,7 @@ function musicVoice(freq,start,dur,vol=.03,type='triangle',cutoff=1400,opts={}){
   }
 
   out.connect(musicBus);
-  const wet=opts.reverb==null?.12:opts.reverb;
+  const wet=opts.reverb==null ? .12 : opts.reverb;
   if(musicVerb&&wet>0){
     const send=audioCtx.createGain();
     send.gain.value=wet;
@@ -423,7 +423,7 @@ function snare(start,vol=.040){
 }
 
 function hat(start,vol=.010,open=false){
-  percussionNoise(start,open?.105:.040,vol,6200,.35,true);
+  percussionNoise(start,open ? .105 : .040,vol,6200,.35,true);
 }
 
 function tom(start,vol=.025,pitch=94){
@@ -462,7 +462,7 @@ function arpNote(chordRoot,tones,index,start,dur,stage,accent=false){
   const tone=tones[ARP_INDEX[index%ARP_INDEX.length]%tones.length];
   const octave=stage>=3 && index%4===3 ? 4 : 2;
   const freq=noteFreq(chordRoot*octave,tone);
-  musicVoice(freq,start,dur,.0135+stage*.0019+(accent?.003:0),
+  musicVoice(freq,start,dur,.0135+stage*.0019+(accent ? .003 : 0),
     stage>=3?'square':'triangle',
     1450+stage*420+musicTension*850,{
       attack:.004,release:.045,reverb:.13,
@@ -473,13 +473,13 @@ function arpNote(chordRoot,tones,index,start,dur,stage,accent=false){
 function themeNote(chordRoot,chordIndex,slot,start,dur,stage,echo=false){
   const sem=MUSIC_THEME[chordIndex][slot%4];
   const freq=noteFreq(chordRoot,sem);
-  const vol=(.010+stage*.0024)*(echo?.58:1);
-  musicVoice(echo?freq*2:freq,start,dur,vol,
+  const vol=(.010+stage*.0024)*(echo ? .58 : 1);
+  musicVoice(echo ? freq*2 : freq,start,dur,vol,
     stage>=4?'sawtooth':'triangle',
     1700+stage*430,{
       attack:.012,release:.11,reverb:.28,
       detune:echo?5:-2,
-      pan:echo?.24:-.10
+      pan:echo ? .24 : -.10
     });
 }
 
@@ -517,7 +517,7 @@ function scheduleMusic(){
     ];
     if(kickPatterns[stage].includes(s)){
       const accent=(s===0||s===8);
-      kick(audioNextStep,.074+stage*.008+(accent?.010:0),accent?1.05:1);
+      kick(audioNextStep,.074+stage*.008+(accent ? .010 : 0),accent ? 1.05 : 1);
     }
 
     if(stage>=1 && (s===4||s===12)){
@@ -528,7 +528,7 @@ function scheduleMusic(){
     }
 
     if(stage>=1 && s%2===0){
-      hat(audioNextStep,.0048+stage*.0016+(s%4===2?.002:0),stage>=3&&s===14);
+      hat(audioNextStep,.0048+stage*.0016+(s%4===2 ? .002 : 0),stage>=3&&s===14);
     }
     if(stage>=4 && s%2===1 && musicTension>.34){
       hat(audioNextStep,.0035+musicTension*.0025,false);
@@ -562,7 +562,7 @@ function scheduleMusic(){
 
     if(arpOn){
       arpNote(chordRoot,chord.quality,s,audioNextStep,
-        stepDur*(stage>=3?.58:.78),stage,s===0||s===8);
+        stepDur*(stage>=3 ? .58 : .78),stage,s===0||s===8);
     }
 
     // Leitmotif. At first you only glimpse it; by FIELD III the player recognises it.
@@ -575,7 +575,7 @@ function scheduleMusic(){
     }else{
       if(s===0||s===4||s===8||s===12){
         const slot=s/4;
-        themeNote(chordRoot,chordIndex,slot,audioNextStep,stepDur*(stage>=4?1.65:2.1),stage);
+        themeNote(chordRoot,chordIndex,slot,audioNextStep,stepDur*(stage>=4 ? 1.65 : 2.1),stage);
         if(stage>=4 && (s===4||s===12)){
           themeNote(chordRoot,chordIndex,slot,audioNextStep+stepDur*.50,stepDur*.9,stage,true);
         }
