@@ -1766,218 +1766,446 @@ function drawRocket(x,y,a,scale,color,isPlayer=false){
   ctx.restore();
 }
 
+
+function bgRand(n){
+  const x=Math.sin(n*12.9898+78.233)*43758.5453123;
+  return x-Math.floor(x);
+}
+
+function drawStarfield(alpha,count,speed,sizeBoost=0){
+  if(alpha<=0)return;
+  ctx.save();
+  for(let i=0;i<count;i++){
+    const seed=i+17;
+    const drift=(S.t*speed*(.45+bgRand(seed+1)*.8));
+    const x=(bgRand(seed*2.17)*W + Math.sin(seed*.73)*drift*.18 + W)%W;
+    const y=(bgRand(seed*4.91)*H + drift)%H;
+    const twinkle=.62+.38*Math.sin(S.t*(.45+bgRand(seed+8)*1.1)+seed*1.71);
+    const rare=bgRand(seed+30);
+    const r=(rare>.965?1.75:(rare>.88?1.15:.72))+sizeBoost;
+    const warm=bgRand(seed+70)>.86;
+    const cool=bgRand(seed+90)>.74;
+
+    ctx.globalAlpha=alpha*(.28+.64*twinkle)*(rare>.965?1:.72);
+    ctx.fillStyle=warm?'#ffd6ae':(cool?'#bcd8ff':'#f3fbff');
+    ctx.fillRect(x,y,r,r);
+
+    if(rare>.982 && alpha>.38){
+      ctx.globalAlpha=alpha*.24*twinkle;
+      ctx.strokeStyle=cool?'#74eaff':'#ffffff';
+      ctx.lineWidth=.55;
+      ctx.beginPath();
+      ctx.moveTo(x-3.5,y+r*.45);
+      ctx.lineTo(x+4.2,y+r*.45);
+      ctx.moveTo(x+r*.45,y-3.5);
+      ctx.lineTo(x+r*.45,y+4.2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawMountainLayer(horizon,offset,amp,alpha,fillTop,fillBottom,rim,phase){
+  if(alpha<=0)return;
+  const step=18;
+  ctx.save();
+
+  const g=ctx.createLinearGradient(0,horizon-amp*1.8,0,H);
+  g.addColorStop(0,fillTop);
+  g.addColorStop(1,fillBottom);
+  ctx.globalAlpha=alpha;
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  ctx.moveTo(-20,H);
+  ctx.lineTo(-20,horizon+offset);
+  for(let x=-20;x<=W+20;x+=step){
+    const y=horizon+offset
+      - Math.sin(x*.018+phase)*amp*.56
+      - Math.sin(x*.043+phase*1.7)*amp*.25
+      - Math.sin(x*.008+phase*.37)*amp*.42;
+    ctx.lineTo(x,y);
+  }
+  ctx.lineTo(W+20,H);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.globalAlpha=alpha*.34;
+  ctx.strokeStyle=rim;
+  ctx.lineWidth=1;
+  ctx.shadowBlur=7;
+  ctx.shadowColor=rim;
+  ctx.beginPath();
+  for(let x=-20,first=true;x<=W+20;x+=step){
+    const y=horizon+offset
+      - Math.sin(x*.018+phase)*amp*.56
+      - Math.sin(x*.043+phase*1.7)*amp*.25
+      - Math.sin(x*.008+phase*.37)*amp*.42;
+    if(first){ctx.moveTo(x,y);first=false}else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPlanet(cx,cy,r,alpha,detail,deepOrbit){
+  if(alpha<=0 || r<6)return;
+
+  ctx.save();
+
+  // Atmosphere is layered outside the body so the limb reads clearly even on OLED black.
+  ctx.globalAlpha=alpha*(.12+.15*detail);
+  ctx.strokeStyle='#5df2ff';
+  ctx.lineWidth=Math.max(2,r*.045);
+  ctx.shadowBlur=Math.min(30,8+r*.045);
+  ctx.shadowColor='#4defff';
+  ctx.beginPath();
+  ctx.arc(cx,cy,r*1.012,0,TAU);
+  ctx.stroke();
+
+  ctx.globalAlpha=alpha*(.10+.08*detail);
+  ctx.strokeStyle='#9b7cff';
+  ctx.lineWidth=Math.max(1,r*.020);
+  ctx.shadowColor='#a06cff';
+  ctx.beginPath();
+  ctx.arc(cx,cy,r*.995,Math.PI*1.02,Math.PI*1.92);
+  ctx.stroke();
+
+  ctx.shadowBlur=0;
+  ctx.globalAlpha=alpha;
+  const ocean=ctx.createRadialGradient(cx-r*.38,cy-r*.42,r*.04,cx,cy,r*1.12);
+  ocean.addColorStop(0,'#2d6685');
+  ocean.addColorStop(.26,'#174465');
+  ocean.addColorStop(.58,'#09223b');
+  ocean.addColorStop(1,'#020611');
+  ctx.fillStyle=ocean;
+  ctx.beginPath();
+  ctx.arc(cx,cy,r,0,TAU);
+  ctx.fill();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx,cy,r*.985,0,TAU);
+  ctx.clip();
+
+  // Stylised continental masses: readable at phone size, subdued enough not to compete with threats.
+  ctx.globalAlpha=alpha*(.16+.10*detail);
+  ctx.fillStyle='#4c766e';
+
+  ctx.beginPath();
+  ctx.moveTo(cx-r*.42,cy-r*.30);
+  ctx.bezierCurveTo(cx-r*.28,cy-r*.48,cx-r*.08,cy-r*.43,cx+r*.02,cy-r*.27);
+  ctx.bezierCurveTo(cx+r*.10,cy-r*.15,cx+r*.03,cy+r*.02,cx-r*.10,cy+r*.08);
+  ctx.bezierCurveTo(cx-r*.22,cy+r*.17,cx-r*.34,cy+r*.04,cx-r*.40,cy-r*.08);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(cx+r*.08,cy-r*.24);
+  ctx.bezierCurveTo(cx+r*.23,cy-r*.36,cx+r*.48,cy-r*.25,cx+r*.56,cy-r*.08);
+  ctx.bezierCurveTo(cx+r*.61,cy+r*.03,cx+r*.47,cy+r*.15,cx+r*.32,cy+r*.12);
+  ctx.bezierCurveTo(cx+r*.19,cy+r*.08,cx+r*.13,cy-r*.03,cx+r*.08,cy-r*.24);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(cx-r*.54,cy+r*.10);
+  ctx.bezierCurveTo(cx-r*.44,cy+r*.03,cx-r*.31,cy+r*.14,cx-r*.27,cy+r*.31);
+  ctx.bezierCurveTo(cx-r*.22,cy+r*.48,cx-r*.36,cy+r*.57,cx-r*.46,cy+r*.43);
+  ctx.bezierCurveTo(cx-r*.55,cy+r*.31,cx-r*.60,cy+r*.18,cx-r*.54,cy+r*.10);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cloud systems and aurora-like bands add scale without literal texture assets.
+  ctx.lineCap='round';
+  for(let i=0;i<5;i++){
+    const yy=cy+r*(-.48+i*.23);
+    ctx.globalAlpha=alpha*(.030+.020*detail);
+    ctx.strokeStyle=i%2===0?'#dff9ff':'#b6d9ff';
+    ctx.lineWidth=Math.max(.7,r*.006);
+    ctx.beginPath();
+    ctx.ellipse(cx-r*.08,yy,r*(.58-i*.025),r*(.075+i*.008),-.12+i*.05,Math.PI*.13,Math.PI*.90);
+    ctx.stroke();
+  }
+
+  // Night-side city lights.
+  if(detail>.18){
+    for(let i=0;i<34;i++){
+      const nx=bgRand(200+i*5.1)*1.65-.72;
+      const ny=bgRand(500+i*7.3)*1.50-.70;
+      if(nx*nx+ny*ny>.72 || nx<.02)continue;
+      const lx=cx+nx*r*.72;
+      const ly=cy+ny*r*.72;
+      const pulse=.70+.30*Math.sin(S.t*.55+i);
+      ctx.globalAlpha=alpha*detail*.22*pulse;
+      ctx.fillStyle=i%5===0?'#ffd477':'#ff9f5a';
+      const s=Math.max(.65,Math.min(1.7,r*.007));
+      ctx.fillRect(lx,ly,s,s);
+    }
+  }
+
+  // Terminator / shadow: gives the sphere volume and moves the visual weight away from the HUD.
+  const shadow=ctx.createLinearGradient(cx-r*.45,cy-r*.22,cx+r*.92,cy+r*.32);
+  shadow.addColorStop(0,'rgba(0,0,0,0)');
+  shadow.addColorStop(.50,'rgba(0,0,0,.12)');
+  shadow.addColorStop(1,'rgba(0,0,0,.82)');
+  ctx.globalAlpha=alpha;
+  ctx.fillStyle=shadow;
+  ctx.fillRect(cx-r,cy-r,r*2,r*2);
+
+  ctx.restore();
+
+  // Thin sunlit rim.
+  ctx.globalAlpha=alpha*(.30+.20*detail);
+  ctx.strokeStyle='#82fbff';
+  ctx.lineWidth=Math.max(.8,r*.010);
+  ctx.shadowBlur=Math.min(18,5+r*.025);
+  ctx.shadowColor='#55efff';
+  ctx.beginPath();
+  ctx.arc(cx,cy,r*.995,Math.PI*1.08,Math.PI*1.72);
+  ctx.stroke();
+
+  if(deepOrbit>.08){
+    // Two restrained orbital traces. They read as scale, not as HUD decoration.
+    ctx.shadowBlur=4;
+    ctx.lineWidth=.8;
+    ctx.globalAlpha=alpha*deepOrbit*.12;
+    ctx.strokeStyle='#7beeff';
+    ctx.beginPath();
+    ctx.ellipse(cx,cy,r*1.56,r*.39,-.20,Math.PI*.08,Math.PI*.92);
+    ctx.stroke();
+
+    ctx.globalAlpha=alpha*deepOrbit*.065;
+    ctx.strokeStyle='#ff73d8';
+    ctx.beginPath();
+    ctx.ellipse(cx,cy-r*.02,r*1.82,r*.46,.18,Math.PI*.14,Math.PI*.86);
+    ctx.stroke();
+
+    // Tiny moving orbital object sells distance and motion.
+    const oa=S.t*.18;
+    const ox=cx+Math.cos(oa)*r*1.48;
+    const oy=cy+Math.sin(oa)*r*.36;
+    ctx.globalAlpha=alpha*deepOrbit*.62;
+    ctx.fillStyle='#eaffff';
+    ctx.shadowBlur=7;
+    ctx.shadowColor='#65f6ff';
+    ctx.fillRect(ox-1.2,oy-1.2,2.4,2.4);
+  }
+
+  ctx.restore();
+}
+
 function background(){
-  const a=Math.max(S.altitude,[0,.18,.42,.70,1.0][S.zoomStage]);
   const t=S.t;
+  const stage=S.zoomStage;
   const z=S.cameraScale;
 
-  // Deep neon sky that always belongs to the same game world.
-  const deepSpace=smoothstep(.66,1.0,a);
-  const sky=ctx.createLinearGradient(0,0,0,H);
-  sky.addColorStop(0,deepSpace>.65?'#010207':'#06081d');
-  sky.addColorStop(.50,deepSpace>.65?'#02040c':(a<.74?'#0a1330':'#080b22'));
-  sky.addColorStop(1,deepSpace>.65?'#04050d':(a<.38?'#10193b':'#070a18'));
-  ctx.fillStyle=sky;
+  // Five-act visual progression:
+  // I night launch -> II upper atmosphere -> III planetary curvature
+  // -> IV orbit -> V deep orbit.
+  const upper=smoothstep(16,38,t);
+  const edge=smoothstep(44,72,t);
+  const orbit=smoothstep(72,102,t);
+  const deep=smoothstep(104,132,t);
+  const groundFade=1-smoothstep(20,52,t);
+  const atmosphereFade=1-smoothstep(58,112,t);
+  const starAlpha=clamp(.05+edge*.42+orbit*.28+deep*.22,0,.94);
+
+  // Space is the permanent base layer. Atmosphere fades off it rather than replacing it.
+  ctx.fillStyle='#01030a';
   ctx.fillRect(0,0,W,H);
 
-  // Subtle geometric arena language, always present.
-  const tile=98 + a*46;
-  const drift=(t*2.0)%tile;
-  const geoFade=1-.72*deepSpace;
-  for(let iy=-1;iy<Math.ceil(H/tile)+1;iy++){
-    for(let ix=-1;ix<Math.ceil(W/tile)+1;ix++){
-      const x=ix*tile-drift*.14;
-      const y=iy*tile;
-      const odd=(ix+iy)&1;
-      ctx.fillStyle=odd?`rgba(65,34,109,${.070*geoFade})`:`rgba(20,49,95,${.060*geoFade})`;
-      ctx.fillRect(x,y,tile,tile);
-      if((ix+iy)%3===0){
-        ctx.fillStyle=`rgba(44,33,96,${.038*geoFade})`;
-        ctx.beginPath();
-        ctx.moveTo(x,y);
-        ctx.lineTo(x+tile,y);
-        ctx.lineTo(x+tile,y+tile);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
+  if(atmosphereFade>0){
+    const sky=ctx.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0,'rgba(5,8,28,'+(atmosphereFade*.92)+')');
+    sky.addColorStop(.44,'rgba(13,23,58,'+(atmosphereFade*.90)+')');
+    sky.addColorStop(.73,'rgba(35,23,68,'+(atmosphereFade*.72)+')');
+    sky.addColorStop(1,'rgba(7,12,30,'+(atmosphereFade*.90)+')');
+    ctx.fillStyle=sky;
+    ctx.fillRect(0,0,W,H);
   }
 
-  // Warm beacon glow.
-  const sunX=W*.78, sunY=H*(.24-.03*a);
-  const sun=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,Math.max(W,H)*.28);
-  sun.addColorStop(0,`rgba(255,165,80,${(.08-.03*a)*(1-.72*deepSpace)})`);
-  sun.addColorStop(.24,`rgba(255,79,200,${(.035-.012*a)*(1-.68*deepSpace)})`);
-  sun.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=sun;
+  // High-altitude colour falloff. This replaces the old always-on checkerboard.
+  const horizonGlow=(1-deep)*(.22+.28*upper)*(1-.50*orbit);
+  if(horizonGlow>0){
+    const hg=ctx.createLinearGradient(0,H*.46,0,H);
+    hg.addColorStop(0,'rgba(66,91,180,0)');
+    hg.addColorStop(.50,'rgba(55,74,168,'+(horizonGlow*.20)+')');
+    hg.addColorStop(.78,'rgba(133,49,145,'+(horizonGlow*.23)+')');
+    hg.addColorStop(1,'rgba(255,101,111,'+(horizonGlow*.06)+')');
+    ctx.fillStyle=hg;
+    ctx.fillRect(0,H*.40,W,H*.60);
+  }
+
+  // Cinematic solar beacon: warm early, small and harder in orbit.
+  const sunX=W*(.80-deep*.06);
+  const sunY=H*(.19+edge*.015);
+  const solarAlpha=.55*(1-deep*.45);
+  const corona=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,Math.max(W,H)*(.24-.08*deep));
+  corona.addColorStop(0,'rgba(255,235,194,'+(solarAlpha*.24)+')');
+  corona.addColorStop(.08,'rgba(255,169,94,'+(solarAlpha*.14)+')');
+  corona.addColorStop(.30,'rgba(255,91,190,'+(solarAlpha*.055)+')');
+  corona.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=corona;
   ctx.fillRect(0,0,W,H);
 
-  // Early game: neon horizon / mountains.
-  const groundA=1-smoothstep(.22,.62,a);
-  if(groundA>0){
-    const horizon=H*(.67+.16*a);
+  ctx.save();
+  ctx.globalAlpha=.26+.30*deep;
+  ctx.fillStyle='#fff5df';
+  ctx.shadowBlur=10+deep*8;
+  ctx.shadowColor='#ffb56e';
+  ctx.beginPath();
+  ctx.arc(sunX,sunY,1.25+deep*.35,0,TAU);
+  ctx.fill();
+  ctx.restore();
+
+  // Deep-space nebula is broad and low-contrast: atmosphere disappears, scale expands.
+  if(orbit>0){
+    const n1=ctx.createRadialGradient(W*.12,H*.18,0,W*.12,H*.18,Math.max(W,H)*.56);
+    n1.addColorStop(0,'rgba(82,70,188,'+(orbit*.045+deep*.035)+')');
+    n1.addColorStop(.42,'rgba(48,32,112,'+(orbit*.024+deep*.022)+')');
+    n1.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=n1;
+    ctx.fillRect(0,0,W,H);
+
+    const n2=ctx.createRadialGradient(W*.86,H*.54,0,W*.86,H*.54,Math.max(W,H)*.46);
+    n2.addColorStop(0,'rgba(25,160,183,'+(deep*.040)+')');
+    n2.addColorStop(.40,'rgba(18,61,103,'+(orbit*.020+deep*.018)+')');
+    n2.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=n2;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // Three star-depth layers. Late fields reveal more stars instead of simply making the same ones brighter.
+  drawStarfield(starAlpha*.42,34,2.0,0);
+  if(edge>.02)drawStarfield(starAlpha*.60*edge,48,3.4,.08);
+  if(orbit>.02)drawStarfield(starAlpha*.72*orbit,62,5.0,.14);
+
+  // FIELD I: actual foreground silhouette, not two sine-wave neon lines.
+  if(groundFade>0){
+    const horizon=H*(.73+.06*upper);
+    drawMountainLayer(horizon,24,44,groundFade*.66,'#101331','#030611','#8c67ff',.7);
+    drawMountainLayer(horizon,6,31,groundFade*.82,'#0b1830','#020510','#42e9ff',2.2);
+    drawMountainLayer(horizon,-4,18,groundFade*.94,'#071624','#01040b','#ff4fc8',4.1);
+
+    // Sparse distant settlement / launch-site lights.
     ctx.save();
-    ctx.lineWidth=1.15;
-
-    ctx.globalAlpha=.40*groundA;
-    ctx.strokeStyle='#43f5ff';
-    ctx.shadowBlur=8;
-    ctx.shadowColor='#43f5ff';
-    ctx.beginPath();
-    ctx.moveTo(-20,horizon);
-    for(let x=-20;x<=W+20;x+=22){
-      const y=horizon-18-Math.sin(x*.027+1.1)*13-Math.sin(x*.011+2.2)*15;
-      ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-
-    ctx.globalAlpha=.28*groundA;
-    ctx.strokeStyle='#ff4fc8';
-    ctx.shadowColor='#ff4fc8';
-    ctx.beginPath();
-    ctx.moveTo(-20,horizon+28);
-    for(let x=-20;x<=W+20;x+=24){
-      const y=horizon+12-Math.sin(x*.031+2.7)*19-Math.sin(x*.014+.5)*11;
-      ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-
-    ctx.shadowBlur=6;
-    ctx.shadowColor='#ff9f43';
-    for(let i=0;i<12;i++){
-      const x=(i*47.5+21)%W;
-      const ridgeY=horizon+8-Math.sin(x*.031+2.7)*18;
-      ctx.globalAlpha=(.24+(i%3)*.08)*groundA;
-      ctx.fillStyle='#ff9f43';
-      ctx.fillRect(x,ridgeY-2,1.5,1.5);
+    ctx.shadowBlur=7;
+    ctx.shadowColor='#ffaf66';
+    for(let i=0;i<24;i++){
+      const x=bgRand(800+i*11.2)*W;
+      const y=horizon-2-bgRand(900+i*7.9)*8;
+      const pulse=.72+.28*Math.sin(t*.65+i*2.1);
+      ctx.globalAlpha=groundFade*(.16+.18*bgRand(i+1000))*pulse;
+      ctx.fillStyle=i%6===0?'#8ff7ff':'#ffb36a';
+      ctx.fillRect(x,y,1.0+(i%4===0?.8:0),1.0);
     }
     ctx.restore();
-  }
 
-  // Cloud ribbons: same neon language as trails.
-  const cloudA=smoothstep(.12,.30,a)*(1-smoothstep(.54,.76,a));
-  if(cloudA>0){
+    // Perspective runway/telemetry traces keep the original neon identity but feel intentional.
     ctx.save();
-    ctx.lineCap='round';
-    for(let layer=0;layer<4;layer++){
-      const yBase=H*(.25+layer*.15) + ((t*(12+layer*4))%(H*.28));
-      const hueColor=layer%2===0?'#67efff':'#b68cff';
-      ctx.globalAlpha=cloudA*(.12-layer*.014);
-      ctx.strokeStyle=hueColor;
-      ctx.shadowBlur=5;
-      ctx.shadowColor=hueColor;
-      ctx.lineWidth=1.35;
+    ctx.globalAlpha=groundFade*.075;
+    ctx.strokeStyle='#53ecff';
+    ctx.lineWidth=.7;
+    const vanishX=W*.50, vanishY=horizon-12;
+    for(let i=-4;i<=4;i++){
       ctx.beginPath();
-      ctx.moveTo(-40,yBase);
-      for(let x=-40;x<=W+40;x+=28){
-        const y=yBase + Math.sin(x*.018+layer*1.7+t*.05)*9;
-        ctx.lineTo(x,y);
-      }
+      ctx.moveTo(vanishX+i*7,vanishY);
+      ctx.lineTo(W*.5+i*W*.19,H);
+      ctx.stroke();
+    }
+    ctx.globalAlpha=groundFade*.055;
+    for(let i=0;i<5;i++){
+      const q=(i+1)/5;
+      const y=vanishY+(H-vanishY)*q*q;
+      ctx.beginPath();
+      ctx.moveTo(W*.16*(1-q),y);
+      ctx.lineTo(W-W*.16*(1-q),y);
       ctx.stroke();
     }
     ctx.restore();
   }
 
-  // Stars become a real backdrop in the last fields.
-  const starA=smoothstep(.30,.78,a);
-  if(starA>0){
-    const starCount=34 + S.zoomStage*10;
-    for(let i=0;i<starCount;i++){
-      const x=(i*83.37 + (i%5)*17 + (i%3)*31)%W;
-      const y=(i*149.11 + (i%4)*23 + (i%7)*11)%Math.max(1,H*.78);
-      const tw=.20+.18*Math.sin(t*.9+i*.9);
-      const size=i%11===0?1.8:(i%5===0?1.25:1);
-      const lateBoost=.11+deepSpace*.18;
-      ctx.fillStyle=`rgba(232,246,255,${starA*(lateBoost+tw)})`;
-      ctx.fillRect(x,y,size,size);
+  // FIELD II: soft atmospheric cloud decks with parallax.
+  const cloudAlpha=smoothstep(15,32,t)*(1-smoothstep(64,90,t));
+  if(cloudAlpha>0){
+    ctx.save();
+    for(let layer=0;layer<4;layer++){
+      const baseY=H*(.18+layer*.17)+Math.sin(t*.045+layer)*10;
+      const drift=(t*(4+layer*1.4))%(W*.55);
+      const band=ctx.createLinearGradient(-80,baseY,W+80,baseY+22);
+      band.addColorStop(0,'rgba(92,225,255,0)');
+      band.addColorStop(.25,'rgba(92,225,255,'+(cloudAlpha*(.030-layer*.004))+')');
+      band.addColorStop(.62,'rgba(191,135,255,'+(cloudAlpha*(.040-layer*.005))+')');
+      band.addColorStop(1,'rgba(255,123,210,0)');
+      ctx.globalAlpha=1;
+      ctx.fillStyle=band;
+      ctx.beginPath();
+      ctx.moveTo(-100,baseY+12);
+      for(let x=-100;x<=W+120;x+=42){
+        const y=baseY
+          +Math.sin((x+drift)*.010+layer*1.9)*11
+          +Math.sin((x-drift)*.022+layer)*5;
+        ctx.lineTo(x,y);
+      }
+      for(let x=W+120;x>=-100;x-=42){
+        const y=baseY+26
+          +Math.sin((x+drift)*.010+layer*1.9+.8)*12
+          +Math.sin((x-drift)*.020+layer+.4)*5;
+        ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.fill();
     }
+    ctx.restore();
   }
 
-  // Planet progression: first it's the ground curvature, then it recedes into a distant background sphere.
-  const curveP=smoothstep(.46,.74,a);
-  const orbitP=smoothstep(.76,1.0,a);
+  // FIELD III -> V: the same planet changes role from horizon, to orbital giant, to distant sphere.
+  const planetReveal=smoothstep(45,65,t);
+  if(planetReveal>0){
+    const pullAway=smoothstep(89,126,t);
+    const radius=W*(1.92*(1-pullAway)+.43*pullAway);
+    const cx=W*(.50+.05*deep);
+    const cy=H*(1.46*(1-pullAway)+.80*pullAway);
+    drawPlanet(cx,cy,radius,planetReveal,.20+.80*orbit,pullAway);
+  }
 
-  let radius = W*(2.0 - 0.42*curveP - 1.22*orbitP);
-  let cy = H*(1.56 - 0.16*curveP + 0.16*orbitP);
-  const cx = W*.5;
-
-  if(curveP>0){
-    ctx.save();
-    ctx.globalAlpha=Math.max(curveP,orbitP*.95);
-
-    // Dark body
-    ctx.fillStyle='rgba(3,7,18,.76)';
+  // FIELD V: tiny moon/secondary body provides a second scale reference.
+  if(deep>0){
+    const mx=W*.16,my=H*.19;
+    const mr=5+deep*8;
+    const moon=ctx.createRadialGradient(mx-mr*.38,my-mr*.42,1,mx,my,mr);
+    moon.addColorStop(0,'rgba(242,247,255,'+(deep*.80)+')');
+    moon.addColorStop(.48,'rgba(145,159,186,'+(deep*.54)+')');
+    moon.addColorStop(1,'rgba(21,26,42,'+(deep*.82)+')');
+    ctx.fillStyle=moon;
     ctx.beginPath();
-    ctx.arc(cx,cy,radius,Math.PI,TAU);
-    ctx.lineTo(W,H);
-    ctx.lineTo(0,H);
-    ctx.closePath();
+    ctx.arc(mx,my,mr,0,TAU);
     ctx.fill();
 
-    // Atmospheric rims
-    ctx.strokeStyle='#4cecff';
-    ctx.lineWidth=1.9;
-    ctx.shadowBlur=10;
-    ctx.shadowColor='#4cecff';
-    ctx.globalAlpha=(.42*curveP + .30*orbitP);
+    ctx.globalAlpha=deep*.14;
+    ctx.strokeStyle='#9bdcff';
+    ctx.lineWidth=.7;
     ctx.beginPath();
-    ctx.arc(cx,cy,radius,Math.PI,TAU);
+    ctx.arc(mx,my,mr+3.5,Math.PI*.8,Math.PI*1.78);
     ctx.stroke();
-
-    ctx.strokeStyle='#ff4fc8';
-    ctx.shadowColor='#ff4fc8';
-    ctx.lineWidth=.8;
-    ctx.globalAlpha=(.14*curveP + .12*orbitP);
-    ctx.beginPath();
-    ctx.arc(cx,cy+4,radius-6,Math.PI,TAU);
-    ctx.stroke();
-
-    ctx.shadowBlur=5;
-    ctx.shadowColor='#ff9f43';
-    for(let i=0;i<10;i++){
-      const theta=Math.PI + .23 + i*.10;
-      const lx=cx+Math.cos(theta)*(radius-13);
-      const ly=cy+Math.sin(theta)*(radius-13);
-      ctx.globalAlpha=(.16*curveP + .10*orbitP)*(.6+(i%3)*.18);
-      ctx.fillStyle='#ff9f43';
-      ctx.fillRect(lx,ly,1.3,1.3);
-    }
-    ctx.restore();
+    ctx.globalAlpha=1;
   }
 
-  // In the final field, the planet becomes clearly distant background, not foreground terrain.
-  if(orbitP>0){
-    ctx.save();
-    ctx.globalAlpha=.12*orbitP;
-    ctx.strokeStyle='#43f5ff';
-    ctx.lineWidth=1.1;
-    ctx.shadowBlur=6;
-    ctx.shadowColor='#43f5ff';
-    ctx.beginPath();
-    ctx.ellipse(W*.5,H*.46,W*.66,H*.18,-.16,Math.PI*.08,Math.PI*.92);
-    ctx.stroke();
-    ctx.strokeStyle='#ff4fc8';
-    ctx.shadowColor='#ff4fc8';
-    ctx.globalAlpha=.07*orbitP;
-    ctx.beginPath();
-    ctx.ellipse(W*.5,H*.40,W*.78,H*.22,.12,Math.PI*.14,Math.PI*.84);
-    ctx.stroke();
-    ctx.restore();
-  }
-
+  // Subtle depth vignette preserves projectile readability on every stage.
   const depth=1-z;
-  const vignette=ctx.createRadialGradient(W*.5,H*.42,0,W*.5,H*.42,Math.max(W,H)*.76);
-  vignette.addColorStop(0,`rgba(80,105,255,${.018+depth*.035})`);
-  vignette.addColorStop(1,'rgba(0,0,0,.26)');
+  const vignette=ctx.createRadialGradient(W*.5,H*.41,0,W*.5,H*.41,Math.max(W,H)*.78);
+  vignette.addColorStop(0,'rgba(78,116,255,'+(.012+depth*.020)+')');
+  vignette.addColorStop(.62,'rgba(0,0,0,.025)');
+  vignette.addColorStop(1,'rgba(0,0,0,'+(.22+deep*.08)+')');
   ctx.fillStyle=vignette;
   ctx.fillRect(0,0,W,H);
 
-  const fade=ctx.createLinearGradient(0,H*.77,0,H);
-  fade.addColorStop(0,'rgba(5,7,20,0)');
-  fade.addColorStop(.52,'rgba(5,7,20,.30)');
-  fade.addColorStop(1,'rgba(5,7,20,.78)');
+  // Lower readability veil: keeps bright planet detail from fighting the touch/gameplay area.
+  const fade=ctx.createLinearGradient(0,H*.73,0,H);
+  fade.addColorStop(0,'rgba(3,6,16,0)');
+  fade.addColorStop(.55,'rgba(3,6,16,'+(.13+.08*orbit)+')');
+  fade.addColorStop(1,'rgba(2,4,12,'+(.54+.08*deep)+')');
   ctx.fillStyle=fade;
-  ctx.fillRect(0,H*.77,W,H*.23);
+  ctx.fillRect(0,H*.73,W,H*.27);
 }
 
 function drawControlIndicator(){
