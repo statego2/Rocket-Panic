@@ -423,6 +423,32 @@ button{
   letter-spacing:.19em;
 }
 .start-menu .stats{display:none!important}
+
+/* The game-over screen reuses the same DOM without inheriting launch chrome. */
+#overlay.death .launch-topline,
+#overlay.death .launch-kicker,
+#overlay.death .launch-spacer,
+#overlay.death .route-head,
+#overlay.death .field-route,
+#overlay.death .route-ends,
+#overlay.death .controls-strip,
+#overlay.death .launch-footer{
+  display:none;
+}
+#overlay.death .launch-hero{
+  margin-top:0;
+  animation:none;
+}
+#overlay.death .launch-console{
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  backdrop-filter:none;
+  animation:none;
+  overflow:visible;
+}
 @keyframes launchPulse{
   0%,100%{opacity:.5;transform:scale(.88)}
   50%{opacity:1;transform:scale(1.18)}
@@ -495,6 +521,13 @@ button{
 
     <div class="launch-only launch-spacer"></div>
 
+    <div id="stats" class="stats" style="display:none">
+      <div class="card"><b id="fs">0</b><span>SCORE</span></div>
+      <div class="card"><b id="bs">0</b><span>BEST</span></div>
+      <div class="card"><b id="ft">0.0s</b><span>SURVIVED</span></div>
+      <div class="card"><b id="fn">I</b><span>FIELD REACHED</span></div>
+    </div>
+
     <div class="launch-only launch-console">
       <div class="route-head"><span>ASCENT ROUTE</span><strong>FIELD I → V</strong></div>
       <div class="field-route">
@@ -522,12 +555,6 @@ button{
       <div class="launch-footer">SURVIVE // CLIMB // BREAK ORBIT</div>
     </div>
 
-    <div id="stats" class="stats" style="display:none">
-      <div class="card"><b id="fs">0</b><span>SCORE</span></div>
-      <div class="card"><b id="bs">0</b><span>BEST</span></div>
-      <div class="card"><b id="ft">0.0s</b><span>SURVIVED</span></div>
-      <div class="card"><b id="fn">I</b><span>FIELD REACHED</span></div>
-    </div>
   </div>
 </div>
 
