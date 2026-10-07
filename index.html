@@ -621,7 +621,7 @@ function scheduleFieldVStep(start,s,bar,phraseStep,stepDur){
 
   // Big, simple pulse. Fewer hits than old FIELD V = more weight.
   if(s===0||s===8){
-    kick(start,.100+(s===0?.010:0),1.055);
+    kick(start,.100+(s===0 ? .010 : 0),1.055);
   }
   if(s===4||s===12){
     snare(start,.033);
@@ -662,8 +662,8 @@ function scheduleFieldVStep(start,s,bar,phraseStep,stepDur){
     const phraseEnd=melodyIndex===15;
     const phrasePeak=melodyIndex===3||melodyIndex===8||phraseEnd;
 
-    musicVoice(freq,start,stepDur*(phraseEnd?3.55:3.10),
-      .0175+(phrasePeak?.0030:0)+(tension*.0015),
+    musicVoice(freq,start,stepDur*(phraseEnd ? 3.55 : 3.10),
+      .0175+(phrasePeak ? .0030 : 0)+(tension*.0015),
       'triangle',3100+tension*500,{
         attack:.025,release:.20,reverb:.38,
         detune:-3,pan:-.08
@@ -671,7 +671,7 @@ function scheduleFieldVStep(start,s,bar,phraseStep,stepDur){
 
     // Sparse octave glow on structural notes; this is the "epic" lift.
     if(phrasePeak){
-      musicVoice(freq*2,start+.018,stepDur*(phraseEnd?3.65:2.75),
+      musicVoice(freq*2,start+.018,stepDur*(phraseEnd ? 3.65 : 2.75),
         .0058,'sine',4200,{
           attack:.055,release:.28,reverb:.48,
           detune:4,pan:.22
