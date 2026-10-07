@@ -39,7 +39,12 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-acti
   position:absolute;top:calc(env(safe-area-inset-top) + 11px);left:50%;
   transform:translateX(-50%);text-align:center;color:#fff;pointer-events:none;
 }
-#combo{font-size:14px;font-weight:900;text-shadow:0 0 12px rgba(255,76,207,.45)}
+#combo{
+  font-size:14px;font-weight:900;color:#f4fbff;
+  text-shadow:0 0 12px rgba(255,76,207,.45);
+  transform-origin:center;will-change:transform,color,text-shadow;
+  transition:color .10s linear,text-shadow .10s linear,transform .07s linear;
+}
 #time{font-size:9px;letter-spacing:.12em;color:rgba(224,244,255,.5);margin-top:4px}
 #stage{font-size:8px;letter-spacing:.14em;color:rgba(110,245,255,.48);margin-top:3px}
 
@@ -961,8 +966,10 @@ let W=0,H=0,DPR=1,last=performance.now();
 
 const S={
   running:false,t:0,score:0,combo:1,comboHold:0,near:0,
+  cleanTime:0,skillHeat:0,flow:0,
+  patternQueue:[],patternDelay:0,nextPattern:4.8,lastPattern:-1,
   missiles:[],bullets:[],particles:[],spawnBank:0,bulletBank:0,
-  shake:0,damageFlash:0,deathFlash:0,whiteFlash:0,
+  shake:0,damageFlash:0,deathFlash:0,whiteFlash:0,nearFlash:0,nearSlow:0,
   dashCd:0,dashT:0,invuln:0,
   shieldRegenDelay:0,
   shieldRegenProgress:0,
@@ -1020,6 +1027,7 @@ let engineBus=null,engineNoise=null,engineNoiseFilter=null,engineNoiseGain=null,
 let audioNextStep=0,audioStep=0,audioStage=-1;
 let musicTension=0;
 let epicExplosionLastBloom=-99,epicExplosionCounter=0;
+let skillPercLast=-99;
 
 // -----------------------------------------------------------------------------
 // ROCKET PANIC — ADAPTIVE ORIGINAL SCORE
@@ -1366,9 +1374,11 @@ function scheduleMusic(){
   if(!soundEnabled||!audioCtx||!S.running)return;
 
   const stage=S.zoomStage;
+  const flow=clamp(S.flow||0,0,1);
   if(audioStage!==stage)audioStage=stage;
 
-  // Tension can bend tempo by only a few BPM; stage transitions remain the big event.
+  // Tension bends tempo only slightly. Player mastery changes orchestration instead:
+  // the better the run, the more of the same song becomes audible.
   const bpm=MUSIC_BPM[stage]+musicTension*(stage===4?2.0:4.0);
   const stepDur=60/bpm/4;
 
@@ -1418,8 +1428,16 @@ function scheduleMusic(){
     if(stage>=1 && s%2===0){
       hat(audioNextStep,.0048+stage*.0016+(s%4===2 ? .002 : 0),stage>=3&&s===14);
     }
-    if(stage>=3 && (s===6||s===14) && musicTension>.26){
-      tom(audioNextStep,.013+musicTension*.007,s===6?105:82);
+    // FLOW percussion: no rhythm-game requirement. Good play simply reveals extra
+    // subdivisions, so near misses/collisions begin to sit inside a richer groove.
+    if(flow>.24 && s%2===1){
+      hat(audioNextStep,.0022+flow*.0038,false);
+    }
+    if(flow>.62 && (s===3||s===11)){
+      percussionNoise(audioNextStep,.032,.0024+flow*.0024,4200,.42,true);
+    }
+    if(stage>=3 && (s===6||s===14) && (musicTension>.26||flow>.55)){
+      tom(audioNextStep,.013+musicTension*.006+flow*.004,s===6?105:82);
     }
 
     // Bass rhythm becomes progressively more syncopated.
@@ -1438,15 +1456,28 @@ function scheduleMusic(){
     }
 
     // The arpeggio is the engine-room: same harmony, increasing temporal resolution.
-    const arpOn=
+    const baseArp=
       stage===0 ? (s%4===0) :
       stage===1 ? (s%2===0) :
       stage===2 ? (s%2===0 || (musicTension>.58 && s%4===1)) :
       true;
+    const flowArp=
+      (flow>.34 && stage<=1 && s%2===0) ||
+      (flow>.72 && stage===2 && s%2===1);
+    const arpOn=baseArp||flowArp;
 
     if(arpOn){
       arpNote(chordRoot,chord.quality,s,audioNextStep,
         stepDur*(stage>=3 ? .58 : .78),stage,s===0||s===8);
+    }
+
+    // The upper "air" layer exists in every FIELD but only becomes audible
+    // while the player is sustaining a strong combo.
+    if(flow>.46 && (s===2||s===6||s===10||s===14)){
+      const sem=chord.quality[ARP_INDEX[(s/2)%ARP_INDEX.length]%chord.quality.length];
+      const freq=noteFreq(chordRoot*4,sem);
+      musicVoice(freq,audioNextStep,stepDur*.48,.0018+flow*.0042,'sine',
+        3000+flow*1700,{attack:.008,release:.10,reverb:.36,pan:s%4===2?-.32:.32});
     }
 
     // Leitmotif. At first you only glimpse it; by FIELD III the player recognises it.
@@ -1483,6 +1514,7 @@ function updateThreatAudio(){
   if(!soundEnabled||!audioCtx||!S.running||!threatGain)return;
 
   const stage=S.zoomStage;
+  const flow=clamp(S.flow||0,0,1);
   const count=Math.min(1,S.missiles.length/(9+stage*10));
   let nearest=9999;
   let speedSum=0;
@@ -1503,6 +1535,10 @@ function updateThreatAudio(){
     stage*.085 + count*.43 + near*.42 + speed*.08 + wounded*.06
   ));
   musicTension+=(targetTension-musicTension)*.075;
+
+  // Performance changes fullness, not musical identity. Losing a combo therefore
+  // creates an audible "drop" even when the player still has shields remaining.
+  if(musicBus)setParam(musicBus.gain,.47+flow*.105,.10);
 
   // Threat bed is now felt more than heard. Near-miss transients carry the excitement.
   const rumble=.00008 + count*.0019 + speed*.00055 + near*.0024;
@@ -1527,8 +1563,8 @@ function updateThreatAudio(){
 
   if(musicVerbGain){
     const musicSpace=stage===4
-      ? (.235 + musicTension*.025)
-      : (.15 + stage*.012 + musicTension*.035);
+      ? (.235 + musicTension*.025 + flow*.022)
+      : (.15 + stage*.012 + musicTension*.035 + flow*.026);
     setParam(musicVerbGain.gain,musicSpace,.35);
   }
 }
@@ -1754,6 +1790,45 @@ function sfxDash(){
   noiseBurst(.040,.010,5600,true,2200,.072,-pan,false,.5,.001);
 }
 
+function musicalSkillHit(kind,strength=1){
+  if(!soundEnabled)return;
+  const ac=ensureAudio();
+  if(!ac||!musicBus)return;
+
+  const now=ac.currentTime;
+  const minGap=kind==='near'?.040:.060;
+  if(now-skillPercLast<minGap)return;
+  skillPercLast=now;
+
+  const flow=clamp(S.flow||0,0,1);
+  const bar=Math.floor(Math.max(0,audioStep-1)/16);
+  const chord=MUSIC_HARMONY[bar%MUSIC_HARMONY.length];
+  const chordRoot=noteFreq(MUSIC_ROOT,chord.shift);
+  const tones=chord.quality;
+  const pick=
+    kind==='near'?tones[(audioStep+1)%tones.length]:
+    kind==='dashKill'?tones[(audioStep+2)%tones.length]:
+    tones[(audioStep+3)%tones.length];
+  const freq=noteFreq(chordRoot*2,pick);
+
+  if(kind==='near'){
+    percussionNoise(now,.024,.0038+flow*.0030,5600,.38,true);
+    musicVoice(freq*2,now+.004,.060,.0026+flow*.0036,'sine',4100,{
+      attack:.002,release:.045,reverb:.22,pan:(Math.random()*2-1)*.20
+    });
+  }else if(kind==='collision'){
+    kick(now,.014+flow*.011,1.025);
+    musicVoice(freq,now+.008,.105,.0030+flow*.0038,'triangle',1600,{
+      attack:.003,release:.070,reverb:.24
+    });
+  }else if(kind==='dashKill'){
+    tom(now,.011+flow*.009,112+flow*18);
+    musicVoice(freq*2,now+.010,.090,.0032+flow*.0044,'sine',3600,{
+      attack:.003,release:.060,reverb:.28
+    });
+  }
+}
+
 function sfxBreakout(stage){
   if(!soundEnabled)return;
   const root=72+stage*3;
@@ -1826,6 +1901,11 @@ addEventListener('resize',resize,{passive:true});
 function hud(){
   scoreEl.textContent=Math.floor(S.score).toString().padStart(6,'0');
   comboEl.textContent='×'+S.combo.toFixed(1);
+  const flow=clamp(S.flow||0,0,1);
+  const hue=190+flow*118;
+  comboEl.style.color=`hsl(${hue} 100% ${92-flow*10}%)`;
+  comboEl.style.transform=`scale(${(1+flow*.11+(S.nearFlash||0)*.025).toFixed(3)})`;
+  comboEl.style.textShadow=`0 0 ${12+flow*16}px hsla(${hue} 100% 65% / ${.38+flow*.36})`;
   timeEl.textContent=S.t.toFixed(1)+'s';
   stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0];
   [...healthEl.children].forEach((e,i)=>{
@@ -1841,8 +1921,10 @@ function hud(){
 function reset(){
   Object.assign(S,{
     t:0,score:0,combo:1,comboHold:0,near:0,
+  cleanTime:0,skillHeat:0,flow:0,
+  patternQueue:[],patternDelay:0,nextPattern:4.8,lastPattern:-1,
     missiles:[],bullets:[],particles:[],spawnBank:0,bulletBank:0,
-    shake:0,damageFlash:0,deathFlash:0,whiteFlash:0,
+    shake:0,damageFlash:0,deathFlash:0,whiteFlash:0,nearFlash:0,nearSlow:0,
     dashCd:0,dashT:0,invuln:0,
     shieldRegenDelay:0,
     shieldRegenProgress:0,
@@ -1877,6 +1959,7 @@ function reset(){
   control.active=false;control.primaryId=null;control.moveX=0;control.moveY=0;control.desiredAngle=0;
   musicTension=0;
   audioStage=-1;
+  skillPercLast=-99;
   app.classList.remove('death');
   overlay.classList.remove('death');
   overlay.classList.add('start-menu');
@@ -2134,10 +2217,10 @@ function difficulty(){
     {rate:2.62, speed:295, turn:1.50, cap:32}
   ][stage];
 
-  let rate=base.rate + age*(stage<4 ? .012 : .012);
-  let speed=base.speed + age*(stage<4 ? .58 : 1.08);
+  let rate=base.rate + age*.012;
+  let speed=base.speed + age*(stage<4 ? .58 : 1.00);
   let turn=base.turn;
-  let cap=base.cap + Math.floor(age*(stage<4 ? .065 : .075));
+  let cap=base.cap + Math.floor(age*(stage<4 ? .065 : .072));
 
   if(stage>0 && age<4.0){
     const ramp=.72 + .28*(age/4.0);
@@ -2145,28 +2228,49 @@ function difficulty(){
     cap=Math.max(base.cap-2,Math.floor(cap*(.74+.26*(age/4.0))));
   }
 
-  // No practical plateau at ~200s anymore.
-  cap=Math.min(stage===4?44:32,cap);
-  speed=Math.min(470,speed);
-  rate=Math.min(4.3,rate);
+  // Challenge breathes: long readable build, then a short real release.
+  const cycle=(age+stage*1.35)%13.0;
+  let pressure,breath=false;
+  if(cycle<9.4){
+    const q=cycle/9.4;
+    const eased=q*q*(3-2*q);
+    pressure=.80+.20*eased;
+  }else{
+    breath=true;
+    const q=(cycle-9.4)/3.6;
+    pressure=.57+.10*q;
+  }
+  rate*=pressure;
 
-  // Invisible tension and release: 10 seconds of pressure, 2.5 seconds of breath.
-  const cycle=(t+2.5)%12.5;
-  if(cycle>=10)rate*=.57;
-  else rate*=.91+.09*(cycle/10);
-  return {rate,speed,turn,cap};
+  // FIELD V keeps growing for long expert runs, but logarithmically rather than
+  // exponentially. Density is bounded for mobile performance; speed, tracking and
+  // pattern cadence continue to provide the "slightly harder" feeling.
+  if(stage===4){
+    const deep=Math.max(0,age-55);
+    const endurance=Math.log1p(deep/28);
+    speed+=endurance*21;
+    rate+=endurance*.13;
+    turn*=1+Math.min(.16,endurance*.035);
+    cap+=Math.floor(endurance*2.2);
+  }
+
+  cap=Math.min(stage===4?50:32,cap);
+  speed=Math.min(stage===4?560:470,speed);
+  rate=Math.min(stage===4?5.05:4.3,rate);
+
+  return {rate,speed,turn,cap,pressure,breath};
 }
 
 function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
 
 // Gameplay radii are authored in visible pixels, independently of camera zoom.
 const FIELD_GEOMETRY=[
-  {hit:11,near:45},{hit:10,near:40},{hit:9,near:35},
-  {hit:7.5,near:29},{hit:6,near:23}
+  {hit:9.2,near:45},{hit:8.3,near:40},{hit:7.1,near:35},
+  {hit:5.4,near:29},{hit:4.0,near:23}
 ];
 function hitRadius(){return FIELD_GEOMETRY[S.zoomStage].hit/Math.max(.28,S.cameraScale)}
 function nearRadius(){return FIELD_GEOMETRY[S.zoomStage].near/Math.max(.28,S.cameraScale)}
-function enemyRadius(m){return (m.r*.85)/Math.max(.28,S.cameraScale)}
+function enemyRadius(m){return (m.r*.68)/Math.max(.28,S.cameraScale)}
 
 
 function smoothstep(a,b,x){
@@ -2211,20 +2315,21 @@ function angleDistance(a,b){
   return Math.abs(((a-b+Math.PI*3)%TAU)-Math.PI);
 }
 
-function perimeterSpawnPoint(margin){
+function perimeterSpawnPoint(margin,forcedAngle=null){
   const b=worldBounds();
   const cx=(b.left+b.right)*.5;
   const cy=(b.top+b.bottom)*.5;
   const hw=(b.right-b.left)*.5 + margin;
   const hh=(b.bottom-b.top)*.5 + margin;
 
-  let a=Math.random()*TAU;
+  let a=forcedAngle==null ? Math.random()*TAU : ((forcedAngle%TAU)+TAU)%TAU;
 
-  // In later fields, discourage repeated attacks from the same direction.
-  if(S.zoomStage>=2 && angleDistance(a,S.lastSpawnAngle)<.55 && Math.random()<.78){
+  // Ambient spawns avoid repeatedly attacking from the same bearing.
+  // Pattern spawns intentionally keep their authored geometry.
+  if(forcedAngle==null && S.zoomStage>=2 && angleDistance(a,S.lastSpawnAngle)<.55 && Math.random()<.78){
     a=(a + .75 + Math.random()*1.35) % TAU;
   }
-  S.lastSpawnAngle=a;
+  if(forcedAngle==null)S.lastSpawnAngle=a;
 
   const dx=Math.cos(a),dy=Math.sin(a);
   const tx=hw/Math.max(.001,Math.abs(dx));
@@ -2240,61 +2345,40 @@ function zoomSpeedCompensation(){
   return 1/Math.pow(Math.max(.28,S.cameraScale),.72);
 }
 
-function spawnMissile(){
+function spawnMissile(opts={}){
   const d=difficulty();
   const margin=34/Math.max(.28,S.cameraScale);
-  const s=perimeterSpawnPoint(margin);
+  const s=perimeterSpawnPoint(margin,opts.spawnAngle==null?null:opts.spawnAngle);
   const x=s.x,y=s.y;
 
   const flavour=S.zoomStage===4?Math.floor(Math.max(0,S.t-110)/6)%3:-1;
-  // Rotate enemy personalities without introducing new enemies or UI.
   const q=Math.random();
-  let type='basic';
-  const zoomComp=zoomSpeedCompensation();
-  let speed=d.speed*1.03*zoomComp;
-  let turn=d.turn*.78;
-  let color='#ff4fc8';
-  let r=5.7;
+  let type=opts.type||'basic';
 
-  if(S.zoomStage>=1 && q<(flavour===0?.34:.17)){
-    type='dart';
-    speed=d.speed*1.47*zoomComp;
-    turn=d.turn*.37;
-    color='#ff9f43';
-    r=4.5;
-  }else if(S.zoomStage>=1 && q<.35){
-    type='hook';
-    speed=d.speed*1.05*zoomComp;
-    turn=d.turn*.90;
-    color='#9677ff';
-    r=6.0;
-  }else if(S.zoomStage>=2 && q<.52){
-    type='interceptor';
-    speed=d.speed*1.28*zoomComp;
-    turn=d.turn*.34;
-    color='#63ff91';
-    r=5.0;
-  }else if(S.zoomStage>=3 && q<.63){
-    type='lance';
-    speed=d.speed*1.66*zoomComp;
-    turn=d.turn*.08;
-    color='#ffd45a';
-    r=4.5;
-  }else if(S.zoomStage>=3 && q<(flavour===1?.91:.77)){
-    type='tracker';
-    speed=d.speed*.98*zoomComp;
-    turn=d.turn*1.06;
-    color='#ff6fb8';
-    r=5.8;
-  }else if(S.zoomStage>=4 && q<(flavour===2?.96:.87)){
-    type='predictor';
-    speed=d.speed*1.18*zoomComp;
-    turn=d.turn*.52;
-    color='#7ef7ff';
-    r=5.0;
-  }else{
-    color=Math.random()<.52?'#ff4fc8':'#ff657d';
+  if(!opts.type){
+    if(S.zoomStage>=1 && q<(flavour===0?.34:.17))type='dart';
+    else if(S.zoomStage>=1 && q<.35)type='hook';
+    else if(S.zoomStage>=2 && q<.52)type='interceptor';
+    else if(S.zoomStage>=3 && q<.63)type='lance';
+    else if(S.zoomStage>=3 && q<(flavour===1?.91:.77))type='tracker';
+    else if(S.zoomStage>=4 && q<(flavour===2?.96:.87))type='predictor';
   }
+
+  const style={
+    basic:{speed:1.03,turn:.78,color:null,r:5.7},
+    dart:{speed:1.47,turn:.37,color:'#ff9f43',r:4.5},
+    hook:{speed:1.05,turn:.90,color:'#9677ff',r:6.0},
+    interceptor:{speed:1.28,turn:.34,color:'#63ff91',r:5.0},
+    lance:{speed:1.66,turn:.08,color:'#ffd45a',r:4.5},
+    tracker:{speed:.98,turn:1.06,color:'#ff6fb8',r:5.8},
+    predictor:{speed:1.18,turn:.52,color:'#7ef7ff',r:5.0}
+  }[type]||{speed:1.03,turn:.78,color:null,r:5.7};
+
+  const zoomComp=zoomSpeedCompensation();
+  let speed=d.speed*style.speed*zoomComp*(opts.speedMul==null?1:opts.speedMul);
+  let turn=d.turn*style.turn*(opts.turnMul==null?1:opts.turnMul);
+  const color=opts.color||style.color||(Math.random()<.52?'#ff4fc8':'#ff657d');
+  const r=style.r;
 
   let leadTime=.20;
   if(type==='dart')leadTime=.38;
@@ -2303,9 +2387,14 @@ function spawnMissile(){
   else if(type==='predictor')leadTime=.86;
   else if(type==='tracker')leadTime=.30;
   else if(type==='hook')leadTime=.24;
+  if(opts.leadTime!=null)leadTime=opts.leadTime;
 
   const pred=predictPlayer(leadTime);
-  const angle=Math.atan2(pred.y-y,pred.x-x);
+  const screenOx=opts.targetOffsetX||0;
+  const screenOy=opts.targetOffsetY||0;
+  const targetX=pred.x+screenOx/Math.max(.28,S.cameraScale);
+  const targetY=pred.y+screenOy/Math.max(.28,S.cameraScale);
+  const angle=Math.atan2(targetY-y,targetX-x);
 
   const lateLife=S.zoomStage===4 ? (1.10 + Math.min(.20,S.stageAge/180)) : 1.0;
 
@@ -2320,7 +2409,7 @@ function spawnMissile(){
       type==='tracker'?(.11+Math.random()*.06):
       type==='dart'?(.58+Math.random()*.22):
       .28,
-    targetX:pred.x,targetY:pred.y,
+    targetX,targetY,
     armTime:.18+Math.random()*.14,
     commitTime:
       type==='interceptor'?(.92+Math.random()*.30):
@@ -2333,8 +2422,67 @@ function spawnMissile(){
       type==='tracker'?6.2:
       type==='predictor'?5.4:
       5.5+Math.random()*1.4
-    )*lateLife
+    )*lateLife*(opts.maxAgeMul==null?1:opts.maxAgeMul)
   });
+}
+
+function beginThreatPattern(){
+  const stage=S.zoomStage;
+  if(stage<1||S.patternQueue.length||S.breakoutSafety>0)return false;
+
+  const base=Math.random()*TAU;
+  const pincer=[
+    {gap:.08,spawnAngle:base,type:stage>=2?'hook':'basic',speedMul:.93},
+    {gap:.16,spawnAngle:base+Math.PI,type:'basic',speedMul:.98}
+  ];
+  const swarm=[
+    {gap:.11,spawnAngle:base-.66,type:'basic',speedMul:.80,turnMul:.92},
+    {gap:.11,spawnAngle:base-.22,type:'basic',speedMul:.84,turnMul:.94},
+    {gap:.11,spawnAngle:base+.22,type:'basic',speedMul:.84,turnMul:.94},
+    {gap:.18,spawnAngle:base+.66,type:'basic',speedMul:.80,turnMul:.92}
+  ];
+  const chase=[
+    {gap:.12,spawnAngle:base-.22,type:stage>=3?'tracker':'hook',speedMul:.92},
+    {gap:.12,spawnAngle:base,type:stage>=3?'tracker':'basic',speedMul:.96},
+    {gap:.18,spawnAngle:base+.22,type:stage>=3?'tracker':'hook',speedMul:.92}
+  ];
+  const cross=[
+    {gap:.14,spawnAngle:base,type:stage>=3?'dart':'basic',speedMul:.94},
+    {gap:.14,spawnAngle:base+Math.PI*.5,type:'basic',speedMul:.91},
+    {gap:.14,spawnAngle:base+Math.PI,type:stage>=3?'dart':'hook',speedMul:.94},
+    {gap:.20,spawnAngle:base+Math.PI*1.5,type:'basic',speedMul:.91}
+  ];
+
+  const recipes=stage===1?[pincer,swarm]:[pincer,swarm,chase,cross];
+  let pick=(Math.random()*recipes.length)|0;
+  if(recipes.length>1 && pick===S.lastPattern)pick=(pick+1)%recipes.length;
+  S.lastPattern=pick;
+  S.patternQueue=recipes[pick].map(v=>({...v}));
+  S.patternDelay=0;
+  return true;
+}
+
+function updatePatternDirector(dt,d){
+  let busy=S.patternQueue.length>0;
+
+  if(busy){
+    S.patternDelay-=dt;
+    while(S.patternQueue.length && S.patternDelay<=0){
+      const item=S.patternQueue.shift();
+      if(S.missiles.length<d.cap)spawnMissile(item);
+      S.patternDelay+=item.gap||.12;
+    }
+    busy=S.patternQueue.length>0;
+  }
+
+  S.nextPattern-=dt;
+  if(!busy && S.nextPattern<=0 && S.zoomStage>=1 && !d.breath &&
+     d.pressure>.84 && S.breakoutSafety<=0 && S.missiles.length<d.cap-3){
+    busy=beginThreatPattern();
+    S.nextPattern=Math.max(4.0,6.9-S.zoomStage*.48)+Math.random()*1.6;
+  }
+
+  return busy;
 }
 
 function spawnBullet(){
@@ -2427,14 +2575,11 @@ function applyRelativeMove(dx,dy){
   // Ignore sub-pixel touchscreen noise.
   if(Math.abs(dx)<0.15 && Math.abs(dy)<0.15)return;
 
-  // Slightly amplified relative touch:
-  // small movements stay precise, faster swipes get a little extra gain.
-  const fingerSpeed=Math.hypot(dx,dy);
-  const dynamicGain=control.sensitivity + Math.min(0.16,fingerSpeed*0.012);
-  // Preserve the exact same *screen-space* sensitivity at every zoom.
-  // FIELD V is 0.28x, so world displacement must scale by 1/cameraScale.
-  const mx=dx*dynamicGain/Math.max(.28,S.cameraScale);
-  const my=dy*dynamicGain/Math.max(.28,S.cameraScale);
+  // Fixed-gain direct control: one screen-space finger delta always produces
+  // the same ship delta. No velocity curve, no acceleration layer, no hidden inertia.
+  // FIELD V still needs world compensation so the on-screen response remains identical.
+  const mx=dx*control.sensitivity/Math.max(.28,S.cameraScale);
+  const my=dy*control.sensitivity/Math.max(.28,S.cameraScale);
 
   const oldX=player.x, oldY=player.y;
 
@@ -2575,6 +2720,21 @@ function dash(){
 }
 startEl.addEventListener('click',start);
 
+function rewardSkill(comboGain,heatGain,hold=1.75){
+  S.combo=Math.min(9,S.combo+comboGain);
+  S.comboHold=Math.max(S.comboHold,hold);
+  S.skillHeat=Math.min(1,S.skillHeat+heatGain);
+}
+
+function breakFlow(){
+  S.combo=1;
+  S.comboHold=0;
+  S.skillHeat=0;
+  S.cleanTime=0;
+  S.flow*=.08;
+  S.nearSlow=0;
+}
+
 function missileVsMissile(){
   const a=S.missiles;
   for(let i=0;i<a.length;i++){
@@ -2590,10 +2750,10 @@ function missileVsMissile(){
         shockwave(x,y,'#ff78d8',S.zoomStage>=4?.95:.75);
         explosionBloom(x,y,'#ff78d8',S.zoomStage>=4?1.0:.70);
         sfxExplosion(.8,x,S.zoomStage);
-        S.score+=155*S.combo;
-        S.combo=Math.min(9,S.combo+.3);
-        S.comboHold=1.65;
-        S.shake=Math.max(S.shake,4);
+        rewardSkill(.36,.16,1.82);
+        S.score+=210*S.combo;
+        musicalSkillHit('collision',1);
+        S.shake=Math.max(S.shake,4.2);
       }
     }
   }
@@ -2657,6 +2817,8 @@ function update(dt){
   S.dashT=Math.max(0,S.dashT-dt);
   S.invuln=Math.max(0,S.invuln-dt);
   S.damageFlash=Math.max(0,S.damageFlash-dt*2.7);
+  S.nearFlash=Math.max(0,S.nearFlash-dt*9.5);
+  S.nearSlow=Math.max(0,S.nearSlow-dt);
 
   // Slow shield regeneration:
   // wait after taking damage, then restore one pip every ~10 seconds.
@@ -2685,6 +2847,14 @@ function update(dt){
   S.comboHold-=dt;
   if(S.comboHold<=0)S.combo+=(1-S.combo)*Math.min(1,dt*2.2);
 
+  S.cleanTime+=dt;
+  S.skillHeat=Math.max(0,S.skillHeat-dt*.072);
+  const comboQuality=clamp((S.combo-1)/8,0,1);
+  const cleanQuality=clamp((S.cleanTime-3)/16,0,1);
+  const targetFlow=clamp(comboQuality*.78+S.skillHeat*.16+cleanQuality*.06,0,1);
+  const flowFollow=targetFlow<S.flow?9.0:2.55;
+  S.flow+=(targetFlow-S.flow)*Math.min(1,dt*flowFollow);
+
   // Relative touch moves position directly; no virtual-stick acceleration layer.
   // Only the rocket's visual orientation is smoothed so the object feels aerodynamic
   // without making the actual controls lag.
@@ -2709,9 +2879,16 @@ function update(dt){
 
   const d=difficulty();
   updateAudio();
+
+  // 20–35 ms perception window after a near miss: the player's direct control stays
+  // live while the threat field briefly breathes. It feels crisp, not cinematic.
+  const worldDt=dt*(S.nearSlow>0?.32:1);
+
   // FIELD V rotates its dominant enemy flavour every six seconds.
   S.flavour=Math.floor(Math.max(0,S.t-110)/6)%3;
-  S.spawnBank+=dt*d.rate;
+
+  const patternBusy=updatePatternDirector(worldDt,d);
+  S.spawnBank+=worldDt*d.rate*(patternBusy?.28:1);
   while(S.spawnBank>=1&&S.missiles.length<d.cap){
     S.spawnBank-=1;
     spawnMissile();
@@ -2731,7 +2908,7 @@ function update(dt){
   }
 
   for(const m of S.missiles){
-    m.age+=dt;
+    m.age+=worldDt;
 
     // During BREAKOUT the expanding ring genuinely pushes threats away.
     if(S.breakoutSafety>0){
@@ -2739,15 +2916,15 @@ function update(dt){
       const dist=Math.max(1,Math.hypot(dx,dy));
       const nx=dx/dist,ny=dy/dist;
       const force=(420/Math.max(.28,S.cameraScale))*(S.breakoutSafety/1.35);
-      m.x+=nx*force*dt;
-      m.y+=ny*force*dt;
+      m.x+=nx*force*worldDt;
+      m.y+=ny*force*worldDt;
       m.angle=Math.atan2(ny,nx);
     }
 
     let want;
 
     if(m.type==='dart'){
-      m.retarget-=dt;
+      m.retarget-=worldDt;
       if(m.retarget<=0){
         const p=predictPlayer(m.leadTime);
         m.targetX=p.x;m.targetY=p.y;
@@ -2780,7 +2957,7 @@ function update(dt){
       want=Math.atan2(p.y-m.y,p.x-m.x);
 
     }else if(m.type==='predictor'){
-      m.retarget-=dt;
+      m.retarget-=worldDt;
       if(m.retarget<=0){
         const p=predictPlayer(m.leadTime);
         m.targetX=p.x;m.targetY=p.y;
@@ -2798,28 +2975,31 @@ function update(dt){
     }
 
     let da=((want-m.angle+Math.PI*3)%TAU)-Math.PI;
-    const mt=m.turn*dt;
+    const mt=m.turn*worldDt;
     da=Math.max(-mt,Math.min(mt,da));
     m.angle+=da;
 
-    m.x+=Math.cos(m.angle)*m.speed*dt;
-    m.y+=Math.sin(m.angle)*m.speed*dt;
+    m.x+=Math.cos(m.angle)*m.speed*worldDt;
+    m.y+=Math.sin(m.angle)*m.speed*worldDt;
 
     m.trail.push({x:m.x,y:m.y,life:((m.type==='dart'||m.type==='lance') ? .46 : .70)});
     if(m.trail.length>((m.type==='dart'||m.type==='lance') ? 22 : 34))m.trail.shift();
-    for(const p of m.trail)p.life-=dt;
+    for(const p of m.trail)p.life-=worldDt;
 
     const dx=m.x-player.x,dy=m.y-player.y;
     const dist=Math.hypot(dx,dy);
 
     if(!m.near&&dist<nearRadius()&&dist>hitRadius()+enemyRadius(m)+4/Math.max(.28,S.cameraScale)){
       m.near=true;S.near++;
-      S.combo=Math.min(9,S.combo+.58);
-      S.comboHold=1.7;
-      S.score+=100*S.combo;
-      floatText(player.x,player.y-23,'NEAR MISS',`hsl(${(180+S.t*90)%360} 100% 85%)`);
+      rewardSkill(.60,.14,1.82);
+      S.score+=125*S.combo;
+      S.nearSlow=Math.max(S.nearSlow,.030);
+      S.nearFlash=1;
+      S.shake=Math.max(S.shake,.85+S.flow*.65);
+      floatText(player.x,player.y-23,'NEAR MISS',`hsl(${190+S.flow*115} 100% 86%)`);
       sfxFlyby(Math.min(2.2,m.speed*S.cameraScale/260));
       sfxNear();
+      musicalSkillHit('near',1);
     }
 
     if(!m.dead&&dist<hitRadius()+enemyRadius(m)+1/Math.max(.28,S.cameraScale)){
@@ -2831,12 +3011,15 @@ function update(dt){
       S.shake=S.zoomStage>=4?10:8;
 
       if(S.dashT>0){
-        S.score+=180*S.combo;
+        rewardSkill(.48,.18,1.90);
+        S.score+=260*S.combo;
+        floatText(player.x,player.y-18,'DASH BREAK','#bffcff');
+        musicalSkillHit('dashKill',1);
       }else if(S.invuln<=0){
         player.hp--;
         S.invuln=.68;
         S.damageFlash=1;
-        S.combo=1;
+        breakFlow();
         S.shieldRegenDelay=6.5;
         S.shieldRegenProgress=0;
         if(player.hp<=0){gameOver();return}
@@ -2858,9 +3041,9 @@ function update(dt){
 
   // Bullets: simple, fast, cheap to render. They pressure empty zones in deep orbit.
   for(const b of S.bullets){
-    b.age+=dt;
-    b.x+=b.vx*dt;
-    b.y+=b.vy*dt;
+    b.age+=worldDt;
+    b.x+=b.vx*worldDt;
+    b.y+=b.vy*worldDt;
 
     const dx=b.x-player.x,dy=b.y-player.y;
     const dist=Math.hypot(dx,dy);
@@ -2872,7 +3055,7 @@ function update(dt){
         player.hp--;
         S.invuln=.64;
         S.damageFlash=1;
-        S.combo=1;
+        breakFlow();
         S.shieldRegenDelay=6.5;
         S.shieldRegenProgress=0;
         if(player.hp<=0){gameOver();return}
@@ -2915,6 +3098,7 @@ function update(dt){
 function drawPlayerTrail(points){
   const p=points.filter(q=>q.life>0);
   if(p.length<2)return;
+  const flow=clamp(S.flow||0,0,1);
 
   // PERFORMANCE VERSION:
   // three batched neon sections instead of per-segment save/shadow/draw calls.
@@ -2935,9 +3119,9 @@ function drawPlayerTrail(points){
     ctx.strokeStyle=colors[c];
 
     // one glow pass
-    ctx.globalAlpha=.22;
-    ctx.lineWidth=7;
-    ctx.shadowBlur=10;
+    ctx.globalAlpha=.22+flow*.12;
+    ctx.lineWidth=7+flow*2.2;
+    ctx.shadowBlur=10+flow*7;
     ctx.shadowColor=colors[c];
     ctx.beginPath();
     ctx.moveTo(p[a].x,p[a].y);
@@ -2945,9 +3129,9 @@ function drawPlayerTrail(points){
     ctx.stroke();
 
     // one core pass
-    ctx.globalAlpha=.88;
-    ctx.lineWidth=2.7;
-    ctx.shadowBlur=4;
+    ctx.globalAlpha=.88+flow*.10;
+    ctx.lineWidth=2.7+flow*.65;
+    ctx.shadowBlur=4+flow*4;
     ctx.beginPath();
     ctx.moveTo(p[a].x,p[a].y);
     for(let i=a+1;i<=b;i++)ctx.lineTo(p[i].x,p[i].y);
@@ -3838,6 +4022,28 @@ function draw(){
     ctx.arc(W*.5,H*.415,ringRadius,0,TAU);
     ctx.stroke();
     ctx.restore();
+  }
+
+  // Invisible FLOW STATE: no badge, no mode announcement. The game simply becomes
+  // a little more luminous when the player is consistently playing well.
+  if(S.flow>.05){
+    const fq=S.flow*S.flow;
+    ctx.save();
+    ctx.globalAlpha=.025+fq*.060;
+    ctx.strokeStyle=fq>.48?'#ff66d8':'#55f7ff';
+    ctx.lineWidth=1.0+fq*1.8;
+    ctx.shadowBlur=8+fq*15;
+    ctx.shadowColor=fq>.48?'#ff4ccf':'#43f5ff';
+    ctx.strokeRect(5,5,Math.max(1,W-10),Math.max(1,H*.83-10));
+    ctx.restore();
+  }
+
+  if(S.nearFlash>0){
+    const q=S.nearFlash;
+    ctx.fillStyle=`rgba(74,247,255,${q*.030})`;
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=`rgba(255,76,207,${q*.014})`;
+    ctx.fillRect(0,0,W,H);
   }
 
   if(S.damageFlash>0){
