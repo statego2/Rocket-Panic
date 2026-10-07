@@ -2219,3 +2219,34 @@ function draw(){
     ctx.fillRect(0,0,W,H);
   }
   if(S.deathFlash>0){
+    ctx.fillStyle=`rgba(255,255,255,${S.deathFlash*.10})`;
+    ctx.fillRect(0,0,W,H);
+  }
+  if(S.whiteFlash>0){
+    ctx.fillStyle=`rgba(90,248,255,${S.whiteFlash*.06})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  ctx.restore();
+}
+
+function loop(now){
+  const dt=Math.min(.033,(now-last)/1000);
+  last=now;
+  try{
+    update(dt);
+    draw();
+  }catch(err){
+    // Keep the animation loop alive even if a single frame hits an unexpected edge case.
+    console.error('ROCKET PANIC frame error:',err);
+  }
+  requestAnimationFrame(loop);
+}
+
+resize();
+reset();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
