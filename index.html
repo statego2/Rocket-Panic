@@ -1900,7 +1900,7 @@ addEventListener('resize',resize,{passive:true});
 
 function hud(){
   scoreEl.textContent=Math.floor(S.score).toString().padStart(6,'0');
-  comboEl.textContent='×'+S.combo.toFixed(1);
+  comboEl.textContent=S.combo>=8.95?'×9 MAX':'×'+S.combo.toFixed(1);
   const flow=clamp(S.flow||0,0,1);
   const hue=190+flow*118;
   comboEl.style.color=`hsl(${hue} 100% ${92-flow*10}%)`;
@@ -2452,8 +2452,16 @@ function beginThreatPattern(){
     {gap:.14,spawnAngle:base+Math.PI,type:stage>=3?'dart':'hook',speedMul:.94},
     {gap:.20,spawnAngle:base+Math.PI*1.5,type:'basic',speedMul:.91}
   ];
+  // GAP: committed trajectories intentionally leave a slim readable corridor.
+  // The player can escape safely, or hold the line and harvest near-misses through it.
+  const gap=[
+    {gap:.10,spawnAngle:base-.30,type:'interceptor',speedMul:.91,turnMul:.82,targetOffsetX:-42,targetOffsetY:-22},
+    {gap:.10,spawnAngle:base-.10,type:'interceptor',speedMul:.94,turnMul:.82,targetOffsetX:-42,targetOffsetY:22},
+    {gap:.10,spawnAngle:base+Math.PI+.10,type:'interceptor',speedMul:.94,turnMul:.82,targetOffsetX:42,targetOffsetY:-22},
+    {gap:.20,spawnAngle:base+Math.PI+.30,type:'interceptor',speedMul:.91,turnMul:.82,targetOffsetX:42,targetOffsetY:22}
+  ];
 
-  const recipes=stage===1?[pincer,swarm]:[pincer,swarm,chase,cross];
+  const recipes=stage===1?[pincer,swarm]:[pincer,swarm,chase,cross,gap];
   let pick=(Math.random()*recipes.length)|0;
   if(recipes.length>1 && pick===S.lastPattern)pick=(pick+1)%recipes.length;
   S.lastPattern=pick;
@@ -2750,10 +2758,21 @@ function missileVsMissile(){
         shockwave(x,y,'#ff78d8',S.zoomStage>=4?.95:.75);
         explosionBloom(x,y,'#ff78d8',S.zoomStage>=4?1.0:.70);
         sfxExplosion(.8,x,S.zoomStage);
-        rewardSkill(.36,.16,1.82);
-        S.score+=210*S.combo;
-        musicalSkillHit('collision',1);
-        S.shake=Math.max(S.shake,4.2);
+
+        // A collision only counts as mastery when it happened in the player's local
+        // danger space or one of the missiles was already threaded past the player.
+        // Random off-screen collisions remain pretty, but they do not play the game for you.
+        const collisionScreenDist=Math.hypot(x-player.x,y-player.y)*S.cameraScale;
+        const manipulated=collisionScreenDist<235 || a[i].near || a[j].near;
+        if(manipulated){
+          rewardSkill(.36,.16,1.82);
+          S.score+=210*S.combo;
+          musicalSkillHit('collision',1);
+          floatText(x,y-12,'CHAIN BOOM','#ffd0f2');
+        }else{
+          S.score+=28;
+        }
+        S.shake=Math.max(S.shake,manipulated?4.2:3.1);
       }
     }
   }
@@ -2778,6 +2797,9 @@ function update(dt){
     S.breakoutPulse=1.0;
     S.breakoutSafety=1.35;
     S.stageAge=0;
+    S.patternQueue.length=0;
+    S.patternDelay=0;
+    S.nextPattern=3.8+Math.random()*1.2;
 
     // BREAKOUT is intentionally safe and satisfying.
     S.invuln=Math.max(S.invuln,1.35);
@@ -2900,7 +2922,7 @@ function update(dt){
     const deep=S.t-145;
     const bulletRate=Math.min(1.45,.18 + deep*.0085);
     const bulletCap=Math.min(24,5+Math.floor(deep/10));
-    S.bulletBank+=dt*bulletRate;
+    S.bulletBank+=worldDt*bulletRate;
     while(S.bulletBank>=1 && S.bullets.length<bulletCap){
       S.bulletBank-=1;
       spawnBullet();
