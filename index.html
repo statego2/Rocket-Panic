@@ -1,0 +1,1615 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#080a22">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rocket Panic">
+<link rel="manifest" href="manifest.webmanifest">
+<title>ROCKET PANIC V18</title>
+<style>
+:root{
+  --cyan:#43f5ff;
+  --pink:#ff4ccf;
+  --orange:#ff9c37;
+  --violet:#9f73ff;
+  --bg:#080a22;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{
+  margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+}
+body{touch-action:none;overscroll-behavior:none}
+#app{position:fixed;inset:0;background:#080a22}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+
+#hud{
+  position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:12px;right:12px;
+  display:flex;justify-content:space-between;pointer-events:none;color:#fff;
+}
+.label{font-size:9px;letter-spacing:.18em;color:rgba(223,243,255,.55)}
+.val{font-size:19px;font-weight:900;margin-top:2px}
+#health{display:flex;gap:4px;justify-content:flex-end;margin-top:6px}
+.hp{width:17px;height:4px;border-radius:5px;background:#55f7ff;box-shadow:0 0 9px #55f7ff}
+.hp.off{background:#2b2c45;box-shadow:none}
+
+#centerHud{
+  position:absolute;top:calc(env(safe-area-inset-top) + 11px);left:50%;
+  transform:translateX(-50%);text-align:center;color:#fff;pointer-events:none;
+}
+#combo{font-size:14px;font-weight:900;text-shadow:0 0 12px rgba(255,76,207,.45)}
+#time{font-size:9px;letter-spacing:.12em;color:rgba(224,244,255,.5);margin-top:4px}
+#stage{font-size:8px;letter-spacing:.14em;color:rgba(110,245,255,.48);margin-top:3px}
+
+#hint{
+  position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom) + 18px);
+  transform:translateX(-50%);
+  color:rgba(225,244,255,.38);font-size:9px;letter-spacing:.11em;
+  white-space:nowrap;pointer-events:none;
+}
+#overlay{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(4,5,18,.70);backdrop-filter:blur(4px);
+}
+.panel{
+  width:min(87vw,380px);padding:27px 22px 22px;text-align:center;
+  border:1px solid rgba(255,255,255,.09);border-radius:17px;
+  background:rgba(7,8,28,.90);box-shadow:0 0 70px rgba(74,242,255,.07);
+}
+h1{
+  margin:0;color:#fff;font-size:32px;letter-spacing:.105em;
+  text-shadow:-5px 0 20px rgba(255,76,207,.28),5px 0 20px rgba(67,245,255,.28);
+}
+.sub{margin-top:7px;font-size:9px;letter-spacing:.18em;color:rgba(225,244,255,.47)}
+.desc{margin:20px 0;font-size:11px;line-height:1.65;color:rgba(228,242,255,.69)}
+.desc b{color:white}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0}
+.card{border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:10px;background:rgba(255,255,255,.015)}
+.card b{display:block;color:white;font-size:18px}
+.card span{font-size:8px;letter-spacing:.13em;color:rgba(220,240,255,.4)}
+button{
+  width:100%;padding:14px 16px;border:0;border-radius:10px;
+  background:linear-gradient(90deg,#58f5ff,#f367dd);color:#02040d;
+  font:900 14px ui-monospace,SFMono-Regular,monospace;letter-spacing:.12em;
+}
+#soundToggle{
+  margin-top:9px;background:rgba(255,255,255,.045);color:rgba(225,244,255,.72);
+  border:1px solid rgba(255,255,255,.09);font-size:10px;padding:11px 14px;
+}
+#landscape{
+  display:none;position:absolute;inset:0;z-index:20;align-items:center;justify-content:center;
+  text-align:center;color:white;background:#080a22;padding:30px;
+}
+@media(orientation:landscape){#landscape{display:flex}}
+</style>
+</head>
+<body>
+<div id="app">
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div><div class="label">SCORE</div><div id="score" class="val">000000</div></div>
+  <div style="text-align:right"><div class="label">SHIELD</div>
+    <div id="health"><i class="hp"></i><i class="hp"></i><i class="hp"></i></div>
+  </div>
+</div>
+
+<div id="centerHud">
+  <div id="combo">×1.0</div>
+  <div id="time">0.0s</div>
+  <div id="stage">FIELD I</div>
+</div>
+
+<div id="hint">SURVIVE DEEP ORBIT</div>
+
+<div id="overlay">
+  <div class="panel">
+    <h1>ROCKET PANIC</h1>
+    <div class="sub">GAME FEEL + SAFE BREAKOUT</div>
+    <div class="desc">
+      Τα BREAKOUTS πλέον είναι <b>safe transitions</b>: το neon κύμα σε προστατεύει στιγμιαία και σπρώχνει τους κοντινούς πυραύλους προς τα έξω όσο ανοίγει η κάμερα.<br>
+      Πρόσθεσα βασικό <b>sound design + impact feedback</b> για near misses, explosions, shield regen και αλλαγή field.<br>
+      Ο ήχος ξεκινά <b>OFF</b> ώστε να μην κόβει τη μουσική/radio του iPhone — τον ανοίγεις μόνο όταν τον θέλεις.<br><br>
+      Δεύτερο δάχτυλο → DASH. Ασπίδες με regen.
+    </div>
+    <div id="stats" class="stats" style="display:none">
+      <div class="card"><b id="fs">0</b><span>SCORE</span></div>
+      <div class="card"><b id="bs">0</b><span>BEST</span></div>
+      <div class="card"><b id="ft">0.0s</b><span>SURVIVED</span></div>
+      <div class="card"><b id="fn">0</b><span>NEAR MISSES</span></div>
+    </div>
+    <button id="start">LAUNCH</button>
+    <button id="soundToggle">SOUND: OFF</button>
+  </div>
+</div>
+
+<div id="landscape">Γύρισε το κινητό όρθια.</div>
+</div>
+
+<script>
+(()=>{
+'use strict';
+
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d',{alpha:false});
+
+const scoreEl=document.getElementById('score');
+const comboEl=document.getElementById('combo');
+const timeEl=document.getElementById('time');
+const stageEl=document.getElementById('stage');
+const healthEl=document.getElementById('health');
+const overlay=document.getElementById('overlay');
+const startEl=document.getElementById('start');
+const soundToggleEl=document.getElementById('soundToggle');
+const statsEl=document.getElementById('stats');
+const fs=document.getElementById('fs');
+const bs=document.getElementById('bs');
+const ft=document.getElementById('ft');
+const fn=document.getElementById('fn');
+
+const TAU=Math.PI*2;
+let W=0,H=0,DPR=1,last=performance.now();
+
+const S={
+  running:false,t:0,score:0,combo:1,comboHold:0,near:0,
+  missiles:[],bullets:[],particles:[],spawnBank:0,bulletBank:0,
+  shake:0,damageFlash:0,deathFlash:0,whiteFlash:0,
+  dashCd:0,dashT:0,invuln:0,
+  shieldRegenDelay:0,
+  shieldRegenProgress:0,
+  cameraScale:1,
+  cameraTarget:1,
+  altitude:0,
+  zoomStage:0,
+  zoomFrom:1,
+  zoomTo:1,
+  zoomTransition:1,
+  breakoutPulse:0,
+  stageAge:0,
+  lastSpawnSide:-1,
+  lastSpawnAngle:-10,
+  breakoutSafety:0,
+  shockwaves:[]
+};
+
+const player={
+  x:0,y:0,vx:0,vy:0,angle:0,r:11,hp:3,
+  speed:365,max:485,dashMax:805,trail:[]
+};
+
+const control={
+  active:false,
+  primaryId:null,
+  lastX:0,lastY:0,
+  touchX:0,touchY:0,
+  sensitivity:1.34,
+  moveX:0,moveY:0,
+  desiredAngle:0,
+  lastMoveTime:0
+};
+
+
+let soundEnabled=false;
+let audioCtx=null;
+
+function ensureAudio(){
+  if(!soundEnabled)return null;
+  if(!audioCtx){
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return null;
+    audioCtx=new AC();
+  }
+  if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
+  return audioCtx;
+}
+
+function tone(freq=440,dur=.08,vol=.035,type='sine',slide=0){
+  const ac=ensureAudio();
+  if(!ac)return;
+  const now=ac.currentTime;
+  const osc=ac.createOscillator();
+  const gain=ac.createGain();
+  osc.type=type;
+  osc.frequency.setValueAtTime(Math.max(30,freq),now);
+  if(slide)osc.frequency.exponentialRampToValueAtTime(Math.max(30,freq+slide),now+dur);
+  gain.gain.setValueAtTime(.0001,now);
+  gain.gain.exponentialRampToValueAtTime(Math.max(.0002,vol),now+.008);
+  gain.gain.exponentialRampToValueAtTime(.0001,now+dur);
+  osc.connect(gain);gain.connect(ac.destination);
+  osc.start(now);osc.stop(now+dur+.02);
+}
+
+function noiseBurst(dur=.07,vol=.025){
+  const ac=ensureAudio();
+  if(!ac)return;
+  const len=Math.max(1,Math.floor(ac.sampleRate*dur));
+  const buf=ac.createBuffer(1,len,ac.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*(1-i/len);
+  const src=ac.createBufferSource();
+  const gain=ac.createGain();
+  const filter=ac.createBiquadFilter();
+  filter.type='bandpass';filter.frequency.value=850;filter.Q.value=.7;
+  src.buffer=buf;
+  gain.gain.setValueAtTime(vol,ac.currentTime);
+  gain.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+dur);
+  src.connect(filter);filter.connect(gain);gain.connect(ac.destination);
+  src.start();src.stop(ac.currentTime+dur+.01);
+}
+
+function sfxExplosion(power=1){
+  if(!soundEnabled)return;
+  noiseBurst(.055+.025*power,.018+.010*power);
+  tone(150,.075,.018*power,'triangle',-65);
+}
+function sfxNear(){
+  if(!soundEnabled)return;
+  tone(760+Math.min(260,S.combo*34),.045,.020,'sine',120);
+}
+function sfxHit(){
+  if(!soundEnabled)return;
+  tone(92,.13,.045,'sawtooth',-25);
+  noiseBurst(.08,.025);
+}
+function sfxShield(){
+  if(!soundEnabled)return;
+  tone(520,.11,.022,'sine',260);
+  setTimeout(()=>tone(780,.12,.018,'sine',220),55);
+}
+function sfxBreakout(stage){
+  if(!soundEnabled)return;
+  const root=260+stage*45;
+  tone(root,.16,.030,'triangle',180);
+  setTimeout(()=>tone(root*1.35,.20,.027,'sine',260),75);
+  setTimeout(()=>tone(root*1.78,.24,.022,'sine',330),145);
+}
+
+function shockwave(x,y,color='#fff',power=1){
+  S.shockwaves.push({x,y,r:10,maxR:95*power,life:.45,max:.45,color,width:2.0});
+}
+
+soundToggleEl.addEventListener('click',()=>{
+  soundEnabled=!soundEnabled;
+  soundToggleEl.textContent='SOUND: '+(soundEnabled?'ON':'OFF');
+  if(soundEnabled){
+    ensureAudio();
+    tone(520,.07,.018,'sine',120);
+  }
+});
+
+function resize(){
+  DPR=Math.min(devicePixelRatio||1,1.5);
+  W=innerWidth;H=innerHeight;
+  canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  if(!S.running){player.x=W*.5;player.y=H*.42}
+}
+addEventListener('resize',resize,{passive:true});
+
+function hud(){
+  scoreEl.textContent=Math.floor(S.score).toString().padStart(6,'0');
+  comboEl.textContent='×'+S.combo.toFixed(1);
+  timeEl.textContent=S.t.toFixed(1)+'s';
+  stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0];
+  [...healthEl.children].forEach((e,i)=>e.classList.toggle('off',i>=player.hp));
+}
+
+function reset(){
+  Object.assign(S,{
+    t:0,score:0,combo:1,comboHold:0,near:0,
+    missiles:[],bullets:[],particles:[],spawnBank:0,bulletBank:0,
+    shake:0,damageFlash:0,deathFlash:0,whiteFlash:0,
+    dashCd:0,dashT:0,invuln:0,
+    shieldRegenDelay:0,
+    shieldRegenProgress:0,
+    cameraScale:1,
+    cameraTarget:1,
+    altitude:0,
+    zoomStage:0,
+    zoomFrom:1,
+    zoomTo:1,
+    zoomTransition:1,
+    breakoutPulse:0,
+    stageAge:0,
+    lastSpawnSide:-1,
+    lastSpawnAngle:-10,
+    breakoutSafety:0,
+    shockwaves:[]
+  });
+  player.x=W*.5;player.y=H*.42;player.vx=player.speed*.7;player.vy=0;
+  player.angle=0;player.hp=3;player.trail=[];
+  control.active=false;control.primaryId=null;control.moveX=0;control.moveY=0;control.desiredAngle=0;
+  hud();
+}
+
+function start(){
+  if(soundEnabled)ensureAudio();
+  reset();S.running=true;
+  overlay.style.display='none';
+}
+
+function gameOver(){
+  if(!S.running)return;
+  S.running=false;
+  burst(player.x,player.y,34,'#77fbff',1.8);
+  shockwave(player.x,player.y,'#77fbff',1.25);
+  sfxHit();sfxExplosion(1.4);
+  S.shake=14;S.deathFlash=1;
+  const best=Math.max(Math.floor(S.score),+(localStorage.getItem('rocketPanicV18Best')||0));
+  localStorage.setItem('rocketPanicV18Best',String(best));
+  fs.textContent=Math.floor(S.score).toLocaleString();
+  bs.textContent=best.toLocaleString();
+  ft.textContent=S.t.toFixed(1)+'s';
+  fn.textContent=S.near;
+  statsEl.style.display='grid';
+  startEl.textContent='RETRY';
+  setTimeout(()=>overlay.style.display='flex',380);
+}
+
+function difficulty(){
+  const t=S.t;
+  const stage=zoomStageForTime(t);
+  const thresholds=[0,24,52,82,115];
+  const age=t-thresholds[stage];
+
+  const base=[
+    {rate:.52, speed:160, turn:1.76, cap:6},
+    {rate:.98, speed:190, turn:1.72, cap:13},
+    {rate:1.56, speed:218, turn:1.64, cap:22},
+    {rate:2.12, speed:246, turn:1.56, cap:34},
+    {rate:2.86, speed:280, turn:1.50, cap:46}
+  ][stage];
+
+  let rate=base.rate + age*(stage<4 ? .014 : .026);
+  let speed=base.speed + age*(stage<4 ? .58 : 1.08);
+  let turn=base.turn;
+  let cap=base.cap + Math.floor(age*(stage<4 ? .12 : .27));
+
+  if(stage>0 && age<4.0){
+    const ramp=.72 + .28*(age/4.0);
+    rate*=ramp;
+    cap=Math.max(base.cap-2,Math.floor(cap*(.74+.26*(age/4.0))));
+  }
+
+  // No practical plateau at ~200s anymore.
+  cap=Math.min(74,cap);
+  speed=Math.min(470,speed);
+  rate=Math.min(6.2,rate);
+
+  return {rate,speed,turn,cap};
+}
+
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+
+function smoothstep(a,b,x){
+  const q=clamp((x-a)/(b-a),0,1);
+  return q*q*(3-2*q);
+}
+
+function zoomStageForTime(t=S.t){
+  if(t<24) return 0;
+  if(t<52) return 1;
+  if(t<82) return 2;
+  if(t<115) return 3;
+  return 4;
+}
+
+function zoomForStage(stage){
+  // Stronger discrete jumps, especially late game.
+  return [1.00,.80,.60,.42,.28][Math.min(4,stage)];
+}
+
+function worldBounds(scale=S.cameraScale){
+  const cx=W*.5;
+  const cy=H*.415;
+  return {
+    left:cx+(15-cx)/scale,
+    right:cx+((W-15)-cx)/scale,
+    top:cy+(45-cy)/scale,
+    bottom:cy+((H*.83)-cy)/scale,
+    cx,cy
+  };
+}
+
+function predictPlayer(lead=0.22){
+  const b=worldBounds();
+  return {
+    x:clamp(player.x + player.vx*lead*.052,b.left,b.right),
+    y:clamp(player.y + player.vy*lead*.052,b.top,b.bottom)
+  };
+}
+
+function angleDistance(a,b){
+  return Math.abs(((a-b+Math.PI*3)%TAU)-Math.PI);
+}
+
+function perimeterSpawnPoint(margin){
+  const b=worldBounds();
+  const cx=(b.left+b.right)*.5;
+  const cy=(b.top+b.bottom)*.5;
+  const hw=(b.right-b.left)*.5 + margin;
+  const hh=(b.bottom-b.top)*.5 + margin;
+
+  let a=Math.random()*TAU;
+
+  // In later fields, discourage repeated attacks from the same direction.
+  if(S.zoomStage>=2 && angleDistance(a,S.lastSpawnAngle)<.55 && Math.random()<.78){
+    a=(a + .75 + Math.random()*1.35) % TAU;
+  }
+  S.lastSpawnAngle=a;
+
+  const dx=Math.cos(a),dy=Math.sin(a);
+  const tx=hw/Math.max(.001,Math.abs(dx));
+  const ty=hh/Math.max(.001,Math.abs(dy));
+  const k=Math.min(tx,ty);
+
+  return {x:cx+dx*k,y:cy+dy*k,angle:a};
+}
+
+function zoomSpeedCompensation(){
+  // Keeps threats visually dangerous after the huge camera zoom-out,
+  // but uses partial rather than full compensation to avoid an unfair jump.
+  return 1/Math.pow(Math.max(.28,S.cameraScale),.72);
+}
+
+function spawnMissile(){
+  const d=difficulty();
+  const margin=34/Math.max(.28,S.cameraScale);
+  const s=perimeterSpawnPoint(margin);
+  const x=s.x,y=s.y;
+
+  const q=Math.random();
+  let type='basic';
+  const zoomComp=zoomSpeedCompensation();
+  let speed=d.speed*1.03*zoomComp;
+  let turn=d.turn*.78;
+  let color='#ff4fc8';
+  let r=5.7;
+
+  if(S.zoomStage>=1 && q<.17){
+    type='dart';
+    speed=d.speed*1.47*zoomComp;
+    turn=d.turn*.37;
+    color='#ff9f43';
+    r=4.5;
+  }else if(S.zoomStage>=1 && q<.35){
+    type='hook';
+    speed=d.speed*1.05*zoomComp;
+    turn=d.turn*.90;
+    color='#9677ff';
+    r=6.0;
+  }else if(S.zoomStage>=2 && q<.52){
+    type='interceptor';
+    speed=d.speed*1.28*zoomComp;
+    turn=d.turn*.34;
+    color='#63ff91';
+    r=5.0;
+  }else if(S.zoomStage>=3 && q<.63){
+    type='lance';
+    speed=d.speed*1.66*zoomComp;
+    turn=d.turn*.08;
+    color='#ffd45a';
+    r=4.5;
+  }else if(S.zoomStage>=3 && q<.77){
+    type='tracker';
+    speed=d.speed*.98*zoomComp;
+    turn=d.turn*1.06;
+    color='#ff6fb8';
+    r=5.8;
+  }else if(S.zoomStage>=4 && q<.87){
+    type='predictor';
+    speed=d.speed*1.18*zoomComp;
+    turn=d.turn*.52;
+    color='#7ef7ff';
+    r=5.0;
+  }else{
+    color=Math.random()<.52?'#ff4fc8':'#ff657d';
+  }
+
+  let leadTime=.20;
+  if(type==='dart')leadTime=.38;
+  else if(type==='interceptor')leadTime=.56;
+  else if(type==='lance')leadTime=.60;
+  else if(type==='predictor')leadTime=.86;
+  else if(type==='tracker')leadTime=.30;
+  else if(type==='hook')leadTime=.24;
+
+  const pred=predictPlayer(leadTime);
+  const angle=Math.atan2(pred.y-y,pred.x-x);
+
+  const lateLife=S.zoomStage===4 ? (2.05 + Math.min(1.15,S.stageAge/95)) : 1.0;
+
+  S.missiles.push({
+    x,y,angle,speed,turn,color,r,type,
+    age:0,near:false,dead:false,trail:[],
+    phase:Math.random()*TAU,
+    bias:(Math.random()<.5?-1:1)*(.42+Math.random()*.28),
+    leadTime,
+    retarget:
+      type==='predictor'?(.32+Math.random()*.13):
+      type==='tracker'?(.11+Math.random()*.06):
+      type==='dart'?(.58+Math.random()*.22):
+      .28,
+    targetX:pred.x,targetY:pred.y,
+    armTime:.18+Math.random()*.14,
+    commitTime:
+      type==='interceptor'?(.92+Math.random()*.30):
+      type==='lance' ? .14 :
+      99,
+    maxAge:(
+      type==='lance'?3.0:
+      type==='interceptor'?4.4:
+      type==='dart'?4.2:
+      type==='tracker'?6.2:
+      type==='predictor'?5.4:
+      5.5+Math.random()*1.4
+    )*lateLife
+  });
+}
+
+function spawnBullet(){
+  const b=worldBounds();
+  const margin=24/Math.max(.28,S.cameraScale);
+  const s=perimeterSpawnPoint(margin);
+
+  // Bullets are true aimed shots: usually some distance ahead of current movement.
+  const deep=Math.max(0,S.t-145);
+  const lead=.34 + Math.min(.62,deep*.0035) + Math.random()*.18;
+  const p=predictPlayer(lead);
+
+  const angle=Math.atan2(p.y-s.y,p.x-s.x);
+  const screenSpeed=235 + Math.min(145,deep*.75) + Math.random()*35;
+  const speed=screenSpeed/Math.max(.28,S.cameraScale);
+
+  S.bullets.push({
+    x:s.x,y:s.y,
+    vx:Math.cos(angle)*speed,
+    vy:Math.sin(angle)*speed,
+    r:2.7/Math.max(.28,S.cameraScale),
+    age:0,
+    maxAge:6.2+Math.random()*2.8,
+    dead:false,
+    color:Math.random()<.72?'#f8fbff':'#7ef7ff'
+  });
+}
+
+function burst(x,y,n,color,power=1){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*TAU;
+    const sp=(35+Math.random()*175)*power;
+    S.particles.push({
+      x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life:.22+Math.random()*.46,max:.68,color,size:.7+Math.random()*2.6
+    });
+  }
+}
+
+function floatText(x,y,text,color='#fff'){
+  S.particles.push({text,x,y,vy:-30,life:.5,max:.5,color});
+}
+
+// RELATIVE TOUCH CONTROL
+// ----------------------
+// The ship moves by the SAME relative displacement as the primary finger.
+// Touch position itself is irrelevant, so re-touching elsewhere never teleports the ship.
+// This is the control model used by mobile shmups such as Phoenix 2 / .Decluster.
+//
+// Primary finger: relative movement.
+// Second simultaneous finger: dash.
+
+function applyRelativeMove(dx,dy){
+  // Ignore sub-pixel touchscreen noise.
+  if(Math.abs(dx)<0.15 && Math.abs(dy)<0.15)return;
+
+  // Slightly amplified relative touch:
+  // small movements stay precise, faster swipes get a little extra gain.
+  const fingerSpeed=Math.hypot(dx,dy);
+  const dynamicGain=control.sensitivity + Math.min(0.16,fingerSpeed*0.012);
+  // Keep the exact same on-screen sensitivity at every zoom level.
+  const mx=dx*dynamicGain/Math.max(.68,S.cameraScale);
+  const my=dy*dynamicGain/Math.max(.68,S.cameraScale);
+
+  const oldX=player.x, oldY=player.y;
+
+  player.x += mx;
+  player.y += my;
+
+  const b=worldBounds();
+  player.x=Math.max(b.left,Math.min(b.right,player.x));
+  player.y=Math.max(b.top,Math.min(b.bottom,player.y));
+
+  const actualX=player.x-oldX;
+  const actualY=player.y-oldY;
+  const mag=Math.hypot(actualX,actualY);
+
+  if(mag>0.1){
+    control.moveX=actualX;
+    control.moveY=actualY;
+    control.desiredAngle=Math.atan2(actualY,actualX);
+    control.lastMoveTime=performance.now();
+
+    // Velocity is only visual/game-feel metadata now; position itself is direct.
+    // This keeps trails/orientation alive without adding control lag.
+    player.vx=actualX*60;
+    player.vy=actualY*60;
+
+    player.trail.push({x:player.x,y:player.y,life:.95});
+    if(player.trail.length>72)player.trail.shift();
+  }
+}
+
+function pointerDown(e){
+  if(!S.running)return;
+  e.preventDefault();
+
+  if(!control.active){
+    // Steering may begin anywhere in the lower 62% of the screen.
+    if(e.clientY < H*.38)return;
+
+    control.active=true;
+    control.primaryId=e.pointerId;
+    control.lastX=e.clientX;
+    control.lastY=e.clientY;
+    control.touchX=e.clientX;
+    control.touchY=e.clientY;
+    canvas.setPointerCapture?.(e.pointerId);
+    return;
+  }
+
+  if(e.pointerId!==control.primaryId){
+    dash();
+  }
+}
+
+function pointerMove(e){
+  if(!control.active || e.pointerId!==control.primaryId)return;
+  e.preventDefault();
+
+  const events=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+
+  for(const p of events){
+    const dx=p.clientX-control.lastX;
+    const dy=p.clientY-control.lastY;
+
+    applyRelativeMove(dx,dy);
+
+    control.lastX=p.clientX;
+    control.lastY=p.clientY;
+    control.touchX=p.clientX;
+    control.touchY=p.clientY;
+  }
+}
+
+function pointerUp(e){
+  if(e.pointerId!==control.primaryId)return;
+  e.preventDefault();
+
+  control.active=false;
+  control.primaryId=null;
+  control.moveX=0;
+  control.moveY=0;
+  player.vx=0;
+  player.vy=0;
+}
+
+canvas.addEventListener('pointerdown',pointerDown,{passive:false});
+canvas.addEventListener('pointermove',pointerMove,{passive:false});
+canvas.addEventListener('pointerup',pointerUp,{passive:false});
+canvas.addEventListener('pointercancel',pointerUp,{passive:false});
+
+function dash(){
+  if(!S.running||S.dashCd>0)return;
+
+  S.dashCd=2.95;
+  S.dashT=.14;
+
+  // Dash in the most recent movement direction.
+  let dx=control.moveX,dy=control.moveY;
+  let mag=Math.hypot(dx,dy);
+
+  if(mag<0.1){
+    dx=Math.cos(player.angle);
+    dy=Math.sin(player.angle);
+    mag=1;
+  }else{
+    dx/=mag;dy/=mag;
+  }
+
+  const distance=68/Math.max(.68,S.cameraScale);
+  const oldX=player.x,oldY=player.y;
+
+  const b=worldBounds();
+  player.x=Math.max(b.left,Math.min(b.right,player.x+dx*distance));
+  player.y=Math.max(b.top,Math.min(b.bottom,player.y+dy*distance));
+
+  control.desiredAngle=Math.atan2(dy,dx);
+  player.vx=dx*player.dashMax;
+  player.vy=dy*player.dashMax;
+
+  // Add several trail points so dash reads as a streak rather than teleport.
+  const steps=6;
+  for(let i=1;i<=steps;i++){
+    const q=i/steps;
+    player.trail.push({
+      x:oldX+(player.x-oldX)*q,
+      y:oldY+(player.y-oldY)*q,
+      life:1.0
+    });
+  }
+  if(player.trail.length>72)player.trail.splice(0,player.trail.length-72);
+
+  burst(player.x,player.y,18,'#5cf8ff',.75);
+  S.shake=3;
+}
+startEl.addEventListener('click',start);
+
+function missileVsMissile(){
+  const a=S.missiles;
+  for(let i=0;i<a.length;i++){
+    if(a[i].dead)continue;
+    for(let j=i+1;j<a.length;j++){
+      if(a[j].dead)continue;
+      const dx=a[i].x-a[j].x,dy=a[i].y-a[j].y;
+      const rr=a[i].r+a[j].r+1;
+      if(dx*dx+dy*dy<rr*rr){
+        a[i].dead=a[j].dead=true;
+        const x=(a[i].x+a[j].x)/2,y=(a[i].y+a[j].y)/2;
+        burst(x,y,14,'#ff78d8',1.1);
+        shockwave(x,y,'#ff78d8',.75);
+        sfxExplosion(.8);
+        S.score+=155*S.combo;
+        S.combo=Math.min(9,S.combo+.3);
+        S.comboHold=1.65;
+        S.shake=Math.max(S.shake,4);
+      }
+    }
+  }
+}
+
+function update(dt){
+  if(!S.running)return;
+
+  S.t+=dt;
+  S.altitude=Math.min(1,S.t/140);
+
+  const wantedStage=zoomStageForTime(S.t);
+  if(wantedStage!==S.zoomStage){
+    S.zoomStage=wantedStage;
+    S.zoomFrom=S.cameraScale;
+    S.zoomTo=zoomForStage(wantedStage);
+    S.zoomTransition=0;
+    S.breakoutPulse=1.0;
+    S.breakoutSafety=1.35;
+    S.stageAge=0;
+
+    // BREAKOUT is intentionally safe and satisfying.
+    S.invuln=Math.max(S.invuln,1.35);
+    S.bullets.length=0;
+    shockwave(player.x,player.y,'#73f8ff',1.55);
+    sfxBreakout(S.zoomStage);
+
+    S.whiteFlash=Math.max(S.whiteFlash,.16);
+    S.shake=Math.max(S.shake,4.5);
+  }
+
+  S.stageAge+=dt;
+
+  if(S.zoomTransition<1){
+    S.zoomTransition=Math.min(1,S.zoomTransition+dt/1.05);
+    const q=S.zoomTransition;
+    const eased=q*q*(3-2*q);
+    S.cameraScale=S.zoomFrom+(S.zoomTo-S.zoomFrom)*eased;
+  }else{
+    // Absolutely fixed between breakouts.
+    S.cameraScale=S.zoomTo;
+  }
+
+  S.cameraTarget=S.zoomTo;
+  S.breakoutPulse=Math.max(0,S.breakoutPulse-dt*.72);
+  S.breakoutSafety=Math.max(0,S.breakoutSafety-dt);
+
+  S.dashCd=Math.max(0,S.dashCd-dt);
+  S.dashT=Math.max(0,S.dashT-dt);
+  S.invuln=Math.max(0,S.invuln-dt);
+  S.damageFlash=Math.max(0,S.damageFlash-dt*2.7);
+
+  // Slow shield regeneration:
+  // wait after taking damage, then restore one pip every ~10 seconds.
+  if(player.hp<3){
+    if(S.shieldRegenDelay>0){
+      S.shieldRegenDelay=Math.max(0,S.shieldRegenDelay-dt);
+      S.shieldRegenProgress=0;
+    }else{
+      S.shieldRegenProgress+=dt;
+      if(S.shieldRegenProgress>=10){
+        player.hp++;
+        S.shieldRegenProgress=0;
+        burst(player.x,player.y,14,'#67f8ff',.55);
+        shockwave(player.x,player.y,'#67f8ff',.7);
+        sfxShield();
+        S.whiteFlash=Math.max(S.whiteFlash,.18);
+      }
+    }
+  }else{
+    S.shieldRegenProgress=0;
+  }
+  S.deathFlash=Math.max(0,S.deathFlash-dt*3);
+  S.whiteFlash=Math.max(0,S.whiteFlash-dt*2.5);
+  S.shake*=Math.pow(.008,dt);
+
+  S.comboHold-=dt;
+  if(S.comboHold<=0)S.combo+=(1-S.combo)*Math.min(1,dt*2.2);
+
+  // Relative touch moves position directly; no virtual-stick acceleration layer.
+  // Only the rocket's visual orientation is smoothed so the object feels aerodynamic
+  // without making the actual controls lag.
+  const nowMs=performance.now();
+  const recentlyMoved=(nowMs-control.lastMoveTime)<110;
+
+  if(recentlyMoved || S.dashT>0){
+    const targetA=control.desiredAngle;
+    let delta=((targetA-player.angle+Math.PI*3)%TAU)-Math.PI;
+    const turnRate=S.dashT>0?24:18;
+    const maxTurn=turnRate*dt;
+    delta=Math.max(-maxTurn,Math.min(maxTurn,delta));
+    player.angle+=delta;
+  }
+
+  // Visual velocity decays; it does NOT affect position.
+  player.vx*=Math.pow(.025,dt);
+  player.vy*=Math.pow(.025,dt);
+
+  for(const p of player.trail)p.life-=dt;
+
+
+  const d=difficulty();
+  S.spawnBank+=dt*d.rate;
+  while(S.spawnBank>=1&&S.missiles.length<d.cap){
+    S.spawnBank-=1;
+    spawnMissile();
+  }
+
+  // Deep FIELD V introduces a second, lightweight pressure layer.
+  // It starts sparse and ramps continuously instead of appearing as a sudden wall.
+  if(S.zoomStage===4 && S.t>145){
+    const deep=S.t-145;
+    const bulletRate=Math.min(1.45,.18 + deep*.0085);
+    const bulletCap=Math.min(24,5+Math.floor(deep/10));
+    S.bulletBank+=dt*bulletRate;
+    while(S.bulletBank>=1 && S.bullets.length<bulletCap){
+      S.bulletBank-=1;
+      spawnBullet();
+    }
+  }
+
+  for(const m of S.missiles){
+    m.age+=dt;
+
+    // During BREAKOUT the expanding ring genuinely pushes threats away.
+    if(S.breakoutSafety>0){
+      const dx=m.x-player.x,dy=m.y-player.y;
+      const dist=Math.max(1,Math.hypot(dx,dy));
+      const nx=dx/dist,ny=dy/dist;
+      const force=(420/Math.max(.28,S.cameraScale))*(S.breakoutSafety/1.35);
+      m.x+=nx*force*dt;
+      m.y+=ny*force*dt;
+      m.angle=Math.atan2(ny,nx);    }
+
+    let want;
+
+    if(m.type==='dart'){
+      m.retarget-=dt;
+      if(m.retarget<=0){
+        const p=predictPlayer(m.leadTime);
+        m.targetX=p.x;m.targetY=p.y;
+        m.retarget=.62+Math.random()*.26;
+      }
+      want=Math.atan2(m.targetY-m.y,m.targetX-m.x);
+
+    }else if(m.type==='hook'){
+      if(m.age<m.armTime){
+        want=m.angle;
+      }else{
+        const p=predictPlayer(m.leadTime);
+        const hookBias=m.bias*Math.exp(-(m.age-m.armTime)*1.18)*.72;
+        want=Math.atan2(p.y-m.y,p.x-m.x)+hookBias;
+      }
+
+    }else if(m.type==='interceptor'){
+      if(m.age<m.commitTime){
+        const p=predictPlayer(m.leadTime);
+        m.targetX=p.x;m.targetY=p.y;
+      }
+      want=Math.atan2(m.targetY-m.y,m.targetX-m.x);
+
+    }else if(m.type==='lance'){
+      want=Math.atan2(m.targetY-m.y,m.targetX-m.x);
+
+    }else if(m.type==='tracker'){
+      // Persistent but still turn-limited chase.
+      const p=predictPlayer(m.leadTime);
+      want=Math.atan2(p.y-m.y,p.x-m.x);
+
+    }else if(m.type==='predictor'){
+      m.retarget-=dt;
+      if(m.retarget<=0){
+        const p=predictPlayer(m.leadTime);
+        m.targetX=p.x;m.targetY=p.y;
+        m.retarget=.38+Math.random()*.16;
+      }
+      want=Math.atan2(m.targetY-m.y,m.targetX-m.x);
+
+    }else{
+      const p=predictPlayer(m.leadTime);
+      want=Math.atan2(p.y-m.y,p.x-m.x);
+    }
+
+    if(S.breakoutSafety>0){
+      want=Math.atan2(m.y-player.y,m.x-player.x);
+    }
+
+    let da=((want-m.angle+Math.PI*3)%TAU)-Math.PI;
+    const mt=m.turn*dt;
+    da=Math.max(-mt,Math.min(mt,da));
+    m.angle+=da;
+
+    m.x+=Math.cos(m.angle)*m.speed*dt;
+    m.y+=Math.sin(m.angle)*m.speed*dt;
+
+    m.trail.push({x:m.x,y:m.y,life:((m.type==='dart'||m.type==='lance') ? .46 : .70)});
+    if(m.trail.length>((m.type==='dart'||m.type==='lance') ? 22 : 34))m.trail.shift();
+    for(const p of m.trail)p.life-=dt;
+
+    const dx=m.x-player.x,dy=m.y-player.y;
+    const dist=Math.hypot(dx,dy);
+
+    if(!m.near&&dist<45&&dist>player.r+m.r+4){
+      m.near=true;S.near++;
+      S.combo=Math.min(9,S.combo+.58);
+      S.comboHold=1.7;
+      S.score+=100*S.combo;
+      floatText(player.x,player.y-23,'NEAR MISS',`hsl(${(180+S.t*90)%360} 100% 85%)`);
+      sfxNear();
+    }
+
+    if(!m.dead&&dist<player.r+m.r+1){
+      m.dead=true;
+      burst(m.x,m.y,16,m.color,1.05);
+      shockwave(m.x,m.y,m.color,.9);
+      sfxExplosion(1);
+      S.shake=8;
+
+      if(S.dashT>0){
+        S.score+=180*S.combo;
+      }else if(S.invuln<=0){
+        player.hp--;
+        S.invuln=.68;
+        S.damageFlash=1;
+        S.combo=1;
+        sfxHit();
+        S.shieldRegenDelay=6.5;
+        S.shieldRegenProgress=0;
+        if(player.hp<=0){gameOver();return}
+      }
+    }
+
+    const b=worldBounds();
+    const q=205/Math.max(.68,S.cameraScale);
+    if(m.age>m.maxAge){
+      m.dead=true;
+      burst(m.x,m.y,8,m.color,.48);
+    }
+    if((m.x<b.left-q||m.x>b.right+q||m.y<b.top-q||m.y>b.bottom+q)&&m.age>2.5)m.dead=true;
+  }
+
+  missileVsMissile();
+  S.missiles=S.missiles.filter(m=>!m.dead);
+
+  // Bullets: simple, fast, cheap to render. They pressure empty zones in deep orbit.
+  for(const b of S.bullets){
+    b.age+=dt;
+    b.x+=b.vx*dt;
+    b.y+=b.vy*dt;
+
+    const dx=b.x-player.x,dy=b.y-player.y;
+    const dist=Math.hypot(dx,dy);
+
+    if(!b.dead && dist<player.r+b.r){
+      b.dead=true;
+      burst(b.x,b.y,7,b.color,.45);
+      if(S.invuln<=0){
+        player.hp--;
+        S.invuln=.64;
+        S.damageFlash=1;
+        S.combo=1;
+        sfxHit();
+        S.shieldRegenDelay=6.5;
+        S.shieldRegenProgress=0;
+        if(player.hp<=0){gameOver();return}
+      }
+    }
+
+    const wb=worldBounds();
+    const q=95/Math.max(.28,S.cameraScale);
+    if(b.age>b.maxAge || b.x<wb.left-q || b.x>wb.right+q || b.y<wb.top-q || b.y>wb.bottom+q){
+      b.dead=true;
+    }
+  }
+  S.bullets=S.bullets.filter(b=>!b.dead);
+
+  for(const w of S.shockwaves){
+    w.life-=dt;
+    const q=1-Math.max(0,w.life/w.max);
+    w.r=10+(w.maxR-10)*q;
+  }
+  S.shockwaves=S.shockwaves.filter(w=>w.life>0);
+
+  for(const p of S.particles){
+    p.life-=dt;
+    if(p.text)p.y+=p.vy*dt;
+    else{
+      p.x+=p.vx*dt;p.y+=p.vy*dt;
+      p.vx*=Math.pow(.12,dt);p.vy*=Math.pow(.12,dt);
+    }
+  }
+  S.particles=S.particles.filter(p=>p.life>0);
+
+  S.score+=dt*(38+S.t*.16)*S.combo;
+  hud();
+}
+
+
+function drawPlayerTrail(points){
+  const p=points.filter(q=>q.life>0);
+  if(p.length<2)return;
+
+  // PERFORMANCE VERSION:
+  // three batched neon sections instead of per-segment save/shadow/draw calls.
+  const colors=['#43f5ff','#ff4ccf','#ff9c37'];
+  const cuts=[
+    [0,Math.max(1,Math.floor(p.length*.42))],
+    [Math.max(0,Math.floor(p.length*.34)),Math.max(1,Math.floor(p.length*.74))],
+    [Math.max(0,Math.floor(p.length*.66)),p.length-1]
+  ];
+
+  for(let c=0;c<3;c++){
+    const [a,b]=cuts[c];
+    if(b<=a)continue;
+
+    ctx.save();
+    ctx.lineCap='round';
+    ctx.lineJoin='round';
+    ctx.strokeStyle=colors[c];
+
+    // one glow pass
+    ctx.globalAlpha=.22;
+    ctx.lineWidth=7;
+    ctx.shadowBlur=10;
+    ctx.shadowColor=colors[c];
+    ctx.beginPath();
+    ctx.moveTo(p[a].x,p[a].y);
+    for(let i=a+1;i<=b;i++)ctx.lineTo(p[i].x,p[i].y);
+    ctx.stroke();
+
+    // one core pass
+    ctx.globalAlpha=.88;
+    ctx.lineWidth=2.7;
+    ctx.shadowBlur=4;
+    ctx.beginPath();
+    ctx.moveTo(p[a].x,p[a].y);
+    for(let i=a+1;i<=b;i++)ctx.lineTo(p[i].x,p[i].y);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+}
+
+function ribbon(points,color,width,alpha=.9){
+  const p=points.filter(q=>q.life>0);
+  if(p.length<2)return;
+
+  ctx.save();
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+
+  ctx.globalAlpha=alpha*.13;
+  ctx.strokeStyle=color;
+  ctx.lineWidth=width*5.0;
+  ctx.shadowBlur=9;
+  ctx.shadowColor=color;
+  ctx.beginPath();
+  ctx.moveTo(p[0].x,p[0].y);
+  for(let i=1;i<p.length;i++)ctx.lineTo(p[i].x,p[i].y);
+  ctx.stroke();
+
+  ctx.globalAlpha=alpha*.42;
+  ctx.lineWidth=width*2.2;
+  ctx.shadowBlur=3;
+  ctx.beginPath();
+  ctx.moveTo(p[0].x,p[0].y);
+  for(let i=1;i<p.length;i++)ctx.lineTo(p[i].x,p[i].y);
+  ctx.stroke();
+
+  ctx.globalAlpha=alpha;
+  ctx.lineWidth=width;
+  ctx.shadowBlur=5;
+  ctx.beginPath();
+  ctx.moveTo(p[0].x,p[0].y);
+  for(let i=1;i<p.length;i++)ctx.lineTo(p[i].x,p[i].y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawRocket(x,y,a,scale,color,isPlayer=false){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.rotate(a);
+  ctx.scale(scale,scale);
+
+  const L=isPlayer?30:23;
+  const B=isPlayer?6.1:4.7;
+  const rear=-L*.44;
+  const nose=L*.56;
+
+  ctx.shadowBlur=isPlayer?18:11;
+  ctx.shadowColor=color;
+
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.moveTo(nose,0);
+  ctx.quadraticCurveTo(L*.29,-B,L*.04,-B*.78);
+  ctx.lineTo(rear,-B*.66);
+  ctx.lineTo(rear-L*.11,-B*1.34);
+  ctx.lineTo(rear+L*.02,-B*.72);
+  ctx.lineTo(rear+L*.02,B*.72);
+  ctx.lineTo(rear-L*.11,B*1.34);
+  ctx.lineTo(rear,B*.66);
+  ctx.lineTo(L*.04,B*.78);
+  ctx.quadraticCurveTo(L*.29,B,nose,0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur=4;
+  ctx.fillStyle=isPlayer?'#112134':'#19162a';
+  ctx.beginPath();
+  ctx.moveTo(nose-L*.12,0);
+  ctx.lineTo(L*.02,-B*.44);
+  ctx.lineTo(rear+L*.05,-B*.36);
+  ctx.lineTo(rear+L*.05,B*.36);
+  ctx.lineTo(L*.02,B*.44);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur=5;
+  ctx.shadowColor=color;
+  ctx.fillStyle='#efffff';
+  ctx.beginPath();
+  ctx.moveTo(nose-L*.04,0);
+  ctx.lineTo(L*.18,-B*.23);
+  ctx.lineTo(L*.18,B*.23);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle=color;
+  ctx.fillRect(-L*.03,-B*.30,L*.17,B*.60);
+
+  ctx.fillStyle='#f8ffff';
+  ctx.shadowColor='#fff';
+  ctx.shadowBlur=8;
+  ctx.fillRect(rear-L*.01,-B*.31,L*.08,B*.62);
+
+  ctx.shadowColor='#ff9b38';
+  ctx.shadowBlur=18;
+  ctx.fillStyle='#ff9b38';
+  ctx.beginPath();
+  ctx.moveTo(rear-L*.02,-B*.30);
+  ctx.lineTo(rear-L*(isPlayer?.34:.28)-Math.random()*3,0);
+  ctx.lineTo(rear-L*.02,B*.30);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle='#fff4c8';
+  ctx.beginPath();
+  ctx.moveTo(rear-L*.02,-B*.13);
+  ctx.lineTo(rear-L*.20-Math.random()*2,0);
+  ctx.lineTo(rear-L*.02,B*.13);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function background(){
+  const a=Math.max(S.altitude,[0,.18,.42,.70,1.0][S.zoomStage]);
+  const t=S.t;
+  const z=S.cameraScale;
+
+  // Deep neon sky that always belongs to the same game world.
+  const sky=ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#06081d');
+  sky.addColorStop(.50,a<.74?'#0a1330':'#080b22');
+  sky.addColorStop(1,a<.38?'#10193b':'#070a18');
+  ctx.fillStyle=sky;
+  ctx.fillRect(0,0,W,H);
+
+  // Subtle geometric arena language, always present.
+  const tile=98 + a*46;
+  const drift=(t*2.0)%tile;
+  for(let iy=-1;iy<Math.ceil(H/tile)+1;iy++){
+    for(let ix=-1;ix<Math.ceil(W/tile)+1;ix++){
+      const x=ix*tile-drift*.14;
+      const y=iy*tile;
+      const odd=(ix+iy)&1;
+      ctx.fillStyle=odd?'rgba(65,34,109,.070)':'rgba(20,49,95,.060)';
+      ctx.fillRect(x,y,tile,tile);
+      if((ix+iy)%3===0){
+        ctx.fillStyle='rgba(44,33,96,.038)';
+        ctx.beginPath();
+        ctx.moveTo(x,y);
+        ctx.lineTo(x+tile,y);
+        ctx.lineTo(x+tile,y+tile);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
+  // Warm beacon glow.
+  const sunX=W*.78, sunY=H*(.24-.03*a);
+  const sun=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,Math.max(W,H)*.28);
+  sun.addColorStop(0,`rgba(255,165,80,${.08-.03*a})`);
+  sun.addColorStop(.24,`rgba(255,79,200,${.035-.012*a})`);
+  sun.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=sun;
+  ctx.fillRect(0,0,W,H);
+
+  // Early game: neon horizon / mountains.
+  const groundA=1-smoothstep(.22,.62,a);
+  if(groundA>0){
+    const horizon=H*(.67+.16*a);
+    ctx.save();
+    ctx.lineWidth=1.15;
+
+    ctx.globalAlpha=.40*groundA;
+    ctx.strokeStyle='#43f5ff';
+    ctx.shadowBlur=8;
+    ctx.shadowColor='#43f5ff';
+    ctx.beginPath();
+    ctx.moveTo(-20,horizon);
+    for(let x=-20;x<=W+20;x+=22){
+      const y=horizon-18-Math.sin(x*.027+1.1)*13-Math.sin(x*.011+2.2)*15;
+      ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+
+    ctx.globalAlpha=.28*groundA;
+    ctx.strokeStyle='#ff4fc8';
+    ctx.shadowColor='#ff4fc8';
+    ctx.beginPath();
+    ctx.moveTo(-20,horizon+28);
+    for(let x=-20;x<=W+20;x+=24){
+      const y=horizon+12-Math.sin(x*.031+2.7)*19-Math.sin(x*.014+.5)*11;
+      ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+
+    ctx.shadowBlur=6;
+    ctx.shadowColor='#ff9f43';
+    for(let i=0;i<12;i++){
+      const x=(i*47.5+21)%W;
+      const ridgeY=horizon+8-Math.sin(x*.031+2.7)*18;
+      ctx.globalAlpha=(.24+(i%3)*.08)*groundA;
+      ctx.fillStyle='#ff9f43';
+      ctx.fillRect(x,ridgeY-2,1.5,1.5);
+    }
+    ctx.restore();
+  }
+
+  // Cloud ribbons: same neon language as trails.
+  const cloudA=smoothstep(.12,.30,a)*(1-smoothstep(.54,.76,a));
+  if(cloudA>0){
+    ctx.save();
+    ctx.lineCap='round';
+    for(let layer=0;layer<4;layer++){
+      const yBase=H*(.25+layer*.15) + ((t*(12+layer*4))%(H*.28));
+      const hueColor=layer%2===0?'#67efff':'#b68cff';
+      ctx.globalAlpha=cloudA*(.12-layer*.014);
+      ctx.strokeStyle=hueColor;
+      ctx.shadowBlur=5;
+      ctx.shadowColor=hueColor;
+      ctx.lineWidth=1.35;
+      ctx.beginPath();
+      ctx.moveTo(-40,yBase);
+      for(let x=-40;x<=W+40;x+=28){
+        const y=yBase + Math.sin(x*.018+layer*1.7+t*.05)*9;
+        ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Stars appear gradually.
+  const starA=smoothstep(.34,.84,a);
+  if(starA>0){
+    for(let i=0;i<34;i++){
+      const x=(i*83.37 + (i%5)*17)%W;
+      const y=(i*149.11 + (i%4)*23)%Math.max(1,H*.72);
+      const tw=.20+.16*Math.sin(t*.9+i*.9);
+      const size=i%8===0?1.6:1;
+      ctx.fillStyle=`rgba(225,243,255,${starA*(.12+tw)})`;
+      ctx.fillRect(x,y,size,size);
+    }
+  }
+
+  // Planet progression: first it's the ground curvature, then it recedes into a distant background sphere.
+  const curveP=smoothstep(.46,.74,a);
+  const orbitP=smoothstep(.76,1.0,a);
+
+  let radius = W*(2.0 - 0.42*curveP - 1.22*orbitP);
+  let cy = H*(1.56 - 0.16*curveP + 0.16*orbitP);
+  const cx = W*.5;
+
+  if(curveP>0){
+    ctx.save();
+    ctx.globalAlpha=Math.max(curveP,orbitP*.95);
+
+    // Dark body
+    ctx.fillStyle='rgba(3,7,18,.76)';
+    ctx.beginPath();
+    ctx.arc(cx,cy,radius,Math.PI,TAU);
+    ctx.lineTo(W,H);
+    ctx.lineTo(0,H);
+    ctx.closePath();
+    ctx.fill();
+
+    // Atmospheric rims
+    ctx.strokeStyle='#4cecff';
+    ctx.lineWidth=1.9;
+    ctx.shadowBlur=10;
+    ctx.shadowColor='#4cecff';
+    ctx.globalAlpha=(.42*curveP + .30*orbitP);
+    ctx.beginPath();
+    ctx.arc(cx,cy,radius,Math.PI,TAU);
+    ctx.stroke();
+
+    ctx.strokeStyle='#ff4fc8';
+    ctx.shadowColor='#ff4fc8';
+    ctx.lineWidth=.8;
+    ctx.globalAlpha=(.14*curveP + .12*orbitP);
+    ctx.beginPath();
+    ctx.arc(cx,cy+4,radius-6,Math.PI,TAU);
+    ctx.stroke();
+
+    ctx.shadowBlur=5;
+    ctx.shadowColor='#ff9f43';
+    for(let i=0;i<10;i++){
+      const theta=Math.PI + .23 + i*.10;
+      const lx=cx+Math.cos(theta)*(radius-13);
+      const ly=cy+Math.sin(theta)*(radius-13);
+      ctx.globalAlpha=(.16*curveP + .10*orbitP)*(.6+(i%3)*.18);
+      ctx.fillStyle='#ff9f43';
+      ctx.fillRect(lx,ly,1.3,1.3);
+    }
+    ctx.restore();
+  }
+
+  // In the final field, the planet becomes clearly distant background, not foreground terrain.
+  if(orbitP>0){
+    ctx.save();
+    ctx.globalAlpha=.12*orbitP;
+    ctx.strokeStyle='#43f5ff';
+    ctx.lineWidth=1.1;
+    ctx.shadowBlur=6;
+    ctx.shadowColor='#43f5ff';
+    ctx.beginPath();
+    ctx.ellipse(W*.5,H*.46,W*.66,H*.18,-.16,Math.PI*.08,Math.PI*.92);
+    ctx.stroke();
+    ctx.strokeStyle='#ff4fc8';
+    ctx.shadowColor='#ff4fc8';
+    ctx.globalAlpha=.07*orbitP;
+    ctx.beginPath();
+    ctx.ellipse(W*.5,H*.40,W*.78,H*.22,.12,Math.PI*.14,Math.PI*.84);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const depth=1-z;
+  const vignette=ctx.createRadialGradient(W*.5,H*.42,0,W*.5,H*.42,Math.max(W,H)*.76);
+  vignette.addColorStop(0,`rgba(80,105,255,${.018+depth*.035})`);
+  vignette.addColorStop(1,'rgba(0,0,0,.26)');
+  ctx.fillStyle=vignette;
+  ctx.fillRect(0,0,W,H);
+
+  const fade=ctx.createLinearGradient(0,H*.77,0,H);
+  fade.addColorStop(0,'rgba(5,7,20,0)');
+  fade.addColorStop(.52,'rgba(5,7,20,.30)');
+  fade.addColorStop(1,'rgba(5,7,20,.78)');
+  ctx.fillStyle=fade;
+  ctx.fillRect(0,H*.77,W,H*.23);
+}
+
+function drawControlIndicator(){
+  if(!control.active)return;
+
+  ctx.save();
+  ctx.globalAlpha=.22;
+  ctx.strokeStyle='#70f8ff';
+  ctx.fillStyle='rgba(100,250,255,.10)';
+  ctx.lineWidth=1.2;
+  ctx.shadowBlur=8;
+  ctx.shadowColor='#52f5ff';
+
+  // Only show a tiny marker under the thumb.
+  // There is intentionally NO joystick ring or fixed control centre.
+  ctx.beginPath();
+  ctx.arc(control.touchX,control.touchY,9,0,TAU);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function draw(){
+  const sx=(Math.random()-.5)*S.shake;
+  const sy=(Math.random()-.5)*S.shake;
+
+  ctx.save();
+  ctx.translate(sx,sy);
+
+  background();
+
+  // World camera zooms; HUD/background remain stable.
+  const cx=W*.5,cy=H*.415;
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.scale(S.cameraScale,S.cameraScale);
+  ctx.translate(-cx,-cy);
+
+  drawPlayerTrail(player.trail);
+
+  for(const w of S.shockwaves){
+    const a=Math.max(0,w.life/w.max);
+    ctx.save();
+    ctx.globalAlpha=a*.48;
+    ctx.strokeStyle=w.color;
+    ctx.lineWidth=(w.width||2)/Math.max(.28,S.cameraScale);
+    ctx.shadowBlur=12;
+    ctx.shadowColor=w.color;
+    ctx.beginPath();
+    ctx.arc(w.x,w.y,w.r/Math.max(.28,S.cameraScale),0,TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  for(const m of S.missiles){
+    const w=((m.type==='dart'||m.type==='lance') ? 1.0 : (m.type==='hook' ? 1.45 : 1.28));
+    const aa=(m.type==='interceptor' ? .76 : .66);
+    ribbon(m.trail,m.color,w,aa);
+  }
+
+  for(const m of S.missiles){
+    const rs=((m.type==='dart'||m.type==='lance') ? .68 : .74);
+    drawRocket(m.x,m.y,m.angle,rs,m.color,false);
+  }
+
+  // Deep-orbit bullets: tiny bright kinetic streaks, visually distinct from rockets.
+  ctx.save();
+  ctx.lineCap='round';
+  for(const b of S.bullets){
+    const mag=Math.max(1,Math.hypot(b.vx,b.vy));
+    const ux=b.vx/mag,uy=b.vy/mag;
+    const tail=11/Math.max(.28,S.cameraScale);
+
+    ctx.strokeStyle=b.color;
+    ctx.globalAlpha=.72;
+    ctx.lineWidth=1.15/Math.max(.28,S.cameraScale);
+    ctx.shadowBlur=6;
+    ctx.shadowColor=b.color;
+    ctx.beginPath();
+    ctx.moveTo(b.x-ux*tail,b.y-uy*tail);
+    ctx.lineTo(b.x,b.y);
+    ctx.stroke();
+
+    ctx.globalAlpha=.95;
+    ctx.fillStyle=b.color;
+    ctx.beginPath();
+    ctx.arc(b.x,b.y,b.r*.62,0,TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  if(S.invuln<=0||Math.floor(S.invuln*20)%2===0){
+    drawRocket(player.x,player.y,player.angle,1.08,'#45f4ff',true);
+  }
+
+  for(const p of S.particles){
+    const pa=Math.max(0,p.life/(p.max||.68));
+    ctx.globalAlpha=Math.min(1,pa);
+    if(p.text){
+      ctx.fillStyle=p.color;
+      ctx.font='900 9px ui-monospace,monospace';
+      ctx.textAlign='center';
+      ctx.shadowBlur=6;
+      ctx.shadowColor=p.color;
+      ctx.fillText(p.text,p.x,p.y);
+    }else{
+      ctx.fillStyle=p.color;
+      ctx.shadowBlur=5;
+      ctx.shadowColor=p.color;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.size,0,TAU);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha=1;
+  ctx.shadowBlur=0;
+
+  ctx.restore(); // camera
+
+  drawControlIndicator();
+
+  // Strong punctuation when the field opens.
+  if(S.breakoutPulse>0){
+    // Clamp animation progress so Canvas never receives a negative radius.
+    const pulse=clamp(S.breakoutPulse,0,1);
+    const p=1-pulse;
+    const alpha=pulse*.40;
+    const inset=14 + p*62;
+    const ringRadius=Math.max(4,36+p*Math.max(W,H)*.48);
+
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    const col=(S.zoomStage%2===0?'#43f5ff':'#ff4fc8');
+    ctx.strokeStyle=col;
+    ctx.lineWidth=2.4;
+    ctx.shadowBlur=18;
+    ctx.shadowColor=col;
+    ctx.strokeRect(inset,inset,Math.max(1,W-inset*2),Math.max(1,H*.83-inset*1.45));
+    ctx.beginPath();
+    ctx.arc(W*.5,H*.415,ringRadius,0,TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if(S.damageFlash>0){
+    ctx.fillStyle=`rgba(255,45,115,${S.damageFlash*.09})`;
+    ctx.fillRect(0,0,W,H);
+  }
+  if(S.deathFlash>0){
+    ctx.fillStyle=`rgba(255,255,255,${S.deathFlash*.10})`;
+    ctx.fillRect(0,0,W,H);
+  }
+  if(S.whiteFlash>0){
+    ctx.fillStyle=`rgba(90,248,255,${S.whiteFlash*.06})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  ctx.restore();
+}
+
+function loop(now){
+  const dt=Math.min(.033,(now-last)/1000);
+  last=now;
+  try{
+    update(dt);
+    draw();
+  }catch(err){
+    // Keep the animation loop alive even if a single frame hits an unexpected edge case.
+    console.error('ROCKET PANIC frame error:',err);
+  }
+  requestAnimationFrame(loop);
+}
+
+resize();
+reset();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
