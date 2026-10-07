@@ -52,6 +52,45 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-acti
 #overlay{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   background:rgba(4,5,18,.70);backdrop-filter:blur(4px);
+  transition:background .7s ease,backdrop-filter .7s ease;
+}
+#overlay.death{
+  align-items:flex-end;
+  padding:0 16px calc(env(safe-area-inset-bottom) + 18px);
+  background:linear-gradient(180deg,rgba(1,3,10,0) 0%,rgba(1,3,10,.04) 46%,rgba(2,4,13,.48) 77%,rgba(2,4,13,.84) 100%);
+  backdrop-filter:none;
+}
+#overlay.death .panel{
+  width:min(91vw,390px);
+  padding:20px 20px 18px;
+  border:1px solid rgba(170,239,255,.13);
+  background:linear-gradient(180deg,rgba(8,12,30,.48),rgba(4,7,20,.78));
+  box-shadow:0 -18px 80px rgba(67,245,255,.08),0 0 80px rgba(255,76,207,.045);
+  backdrop-filter:blur(13px) saturate(125%);
+  animation:deathPanelIn .85s cubic-bezier(.2,.75,.15,1) both;
+}
+#overlay.death h1{
+  font-size:29px;
+  letter-spacing:.16em;
+  text-shadow:0 0 22px rgba(223,251,255,.24),-5px 0 24px rgba(255,76,207,.18),5px 0 24px rgba(67,245,255,.22);
+}
+#overlay.death .sub{color:rgba(158,239,255,.72);letter-spacing:.22em}
+#overlay.death .desc{margin:12px 0 15px;color:rgba(230,244,255,.66);line-height:1.55}
+#overlay.death .card{
+  background:rgba(255,255,255,.022);
+  border-color:rgba(180,235,255,.085);
+}
+#overlay.death button{
+  background:linear-gradient(90deg,#67f5ff 0%,#b58cff 52%,#ff70d7 100%);
+  box-shadow:0 0 24px rgba(96,238,255,.14);
+}
+#app.death #hud,#app.death #centerHud,#app.death #hint{
+  opacity:0;
+  transition:opacity .55s ease;
+}
+@keyframes deathPanelIn{
+  from{opacity:0;transform:translateY(18px) scale(.985)}
+  to{opacity:1;transform:translateY(0) scale(1)}
 }
 .panel{
   width:min(87vw,380px);padding:27px 22px 22px;text-align:center;
@@ -106,9 +145,9 @@ button{
 
 <div id="overlay">
   <div class="panel">
-    <h1>ROCKET PANIC</h1>
-    <div class="sub">CONTROL FIX</div>
-    <div class="desc">
+    <h1 id="overlayTitle">ROCKET PANIC</h1>
+    <div class="sub" id="overlaySub">CONTROL FIX</div>
+    <div class="desc" id="overlayDesc">
       Ένα <b>original adaptive score</b> που εξελίσσεται μαζί με το run.<br>
       Το ίδιο μουσικό θέμα περνά από πέντε μορφές: ατμόσφαιρα → παλμός → καταδίωξη → πανικός → <b>deep-orbit climax</b>.<br>
       Η πυκνότητα των απειλών αλλάζει διακριτικά το tension και το timbre χωρίς να πνίγει τη μουσική.<br><br>
@@ -118,7 +157,7 @@ button{
       <div class="card"><b id="fs">0</b><span>SCORE</span></div>
       <div class="card"><b id="bs">0</b><span>BEST</span></div>
       <div class="card"><b id="ft">0.0s</b><span>SURVIVED</span></div>
-      <div class="card"><b id="fn">0</b><span>NEAR MISSES</span></div>
+      <div class="card"><b id="fn">I</b><span>FIELD REACHED</span></div>
     </div>
     <button id="start">LAUNCH</button>
     <button id="soundToggle">SOUND: ON</button>
@@ -134,6 +173,7 @@ button{
 
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d',{alpha:false});
+const app=document.getElementById('app');
 
 const scoreEl=document.getElementById('score');
 const comboEl=document.getElementById('combo');
@@ -141,6 +181,9 @@ const timeEl=document.getElementById('time');
 const stageEl=document.getElementById('stage');
 const healthEl=document.getElementById('health');
 const overlay=document.getElementById('overlay');
+const overlayTitle=document.getElementById('overlayTitle');
+const overlaySub=document.getElementById('overlaySub');
+const overlayDesc=document.getElementById('overlayDesc');
 const startEl=document.getElementById('start');
 const soundToggleEl=document.getElementById('soundToggle');
 const statsEl=document.getElementById('stats');
@@ -171,6 +214,17 @@ const S={
   lastSpawnSide:-1,
   lastSpawnAngle:-10,
   breakoutSafety:0,
+  deathMode:false,
+  deathResolved:false,
+  deathTimer:0,
+  deathDuration:2.05,
+  deathCameraFrom:1,
+  deathCameraTo:1,
+  deathX:0,
+  deathY:0,
+  deathStage:0,
+  deathScore:0,
+  deathTime:0,
   shockwaves:[]
 };
 
@@ -934,6 +988,17 @@ function reset(){
     lastSpawnSide:-1,
     lastSpawnAngle:-10,
     breakoutSafety:0,
+    deathMode:false,
+    deathResolved:false,
+    deathTimer:0,
+    deathDuration:2.05,
+    deathCameraFrom:1,
+    deathCameraTo:1,
+    deathX:0,
+    deathY:0,
+    deathStage:0,
+    deathScore:0,
+    deathTime:0,
     shockwaves:[]
   });
   player.x=W*.5;player.y=H*.42;player.vx=player.speed*.7;player.vy=0;
@@ -941,6 +1006,13 @@ function reset(){
   control.active=false;control.primaryId=null;control.moveX=0;control.moveY=0;control.desiredAngle=0;
   musicTension=0;
   audioStage=-1;
+  app.classList.remove('death');
+  overlay.classList.remove('death');
+  overlayTitle.textContent='ROCKET PANIC';
+  overlaySub.textContent='CONTROL FIX';
+  overlayDesc.innerHTML='Ένα <b>original adaptive score</b> που εξελίσσεται μαζί με το run.<br>Το ίδιο μουσικό θέμα περνά από πέντε μορφές: ατμόσφαιρα → παλμός → καταδίωξη → πανικός → <b>deep-orbit climax</b>.<br>Η πυκνότητα των απειλών αλλάζει διακριτικά το tension και το timbre χωρίς να πνίγει τη μουσική.<br><br>SOUND ξεκινά ON. Δεύτερο δάχτυλο → DASH.';
+  statsEl.style.display='none';
+  startEl.textContent='LAUNCH';
   hud();
 }
 
@@ -960,22 +1032,102 @@ function start(){
 }
 
 function gameOver(){
-  if(!S.running)return;
+  if(!S.running||S.deathMode)return;
+
   S.running=false;
-  burst(player.x,player.y,34,'#77fbff',1.8);
-  shockwave(player.x,player.y,'#77fbff',1.25);
+  S.deathMode=true;
+  S.deathResolved=false;
+  S.deathTimer=0;
+  S.deathCameraFrom=S.cameraScale;
+  // A gentle pull-back; FIELD V gets the widest final composition.
+  S.deathCameraTo=Math.max(.215,S.cameraScale*(S.zoomStage>=4?.82:.88));
+  S.deathX=player.x;
+  S.deathY=player.y;
+  S.deathStage=S.zoomStage;
+  S.deathScore=Math.floor(S.score);
+  S.deathTime=S.t;
+
+  control.active=false;
+  control.primaryId=null;
+  player.hp=0;
+
+  // Clear gameplay pressure instantly, but leave a painterly aftermath.
+  S.missiles.length=0;
+  S.bullets.length=0;
+  S.spawnBank=0;
+  S.bulletBank=0;
+
+  burst(player.x,player.y,46,'#fff7df',1.65);
+  burst(player.x,player.y,38,'#6af7ff',1.45);
+  burst(player.x,player.y,28,'#ff6fd8',1.28);
+  shockwave(player.x,player.y,'#ffffff',1.42);
+  shockwave(player.x,player.y,'#69f6ff',1.18);
+  explosionBloom(player.x,player.y,'#ffffff',1.36);
+  explosionBloom(player.x,player.y,'#ff74d8',1.10);
+
   sfxDeath();
   fadeAudioForMenu();
-  S.shake=14;S.deathFlash=1;
-  const best=Math.max(Math.floor(S.score),+(localStorage.getItem('rocketPanicV22Best')||0));
-  localStorage.setItem('rocketPanicV22Best',String(best));
-  fs.textContent=Math.floor(S.score).toLocaleString();
-  bs.textContent=best.toLocaleString();
-  ft.textContent=S.t.toFixed(1)+'s';
-  fn.textContent=S.near;
-  statsEl.style.display='grid';
-  startEl.textContent='RETRY';
-  setTimeout(()=>overlay.style.display='flex',380);
+  S.shake=15;
+  S.deathFlash=1;
+  S.whiteFlash=Math.max(S.whiteFlash,.28);
+  app.classList.add('death');
+}
+
+function updateDeathScene(dt){
+  S.deathTimer+=dt;
+
+  const q=clamp(S.deathTimer/S.deathDuration,0,1);
+  const ease=1-Math.pow(1-q,3);
+  S.cameraScale=S.deathCameraFrom+(S.deathCameraTo-S.deathCameraFrom)*ease;
+
+  S.deathFlash=Math.max(0,S.deathFlash-dt*1.55);
+  S.whiteFlash=Math.max(0,S.whiteFlash-dt*1.30);
+  S.shake*=Math.pow(.018,dt);
+
+  // Let the player's last trail and explosion breathe out instead of freezing.
+  for(const p of player.trail)p.life-=dt*.82;
+
+  for(const w of S.shockwaves){
+    w.life-=dt;
+    const qq=1-Math.max(0,w.life/w.max);
+    w.r=10+(w.maxR-10)*qq;
+  }
+  S.shockwaves=S.shockwaves.filter(w=>w.life>0);
+
+  for(const p of S.particles){
+    p.life-=dt;
+    if(p.text){
+      p.y+=p.vy*dt;
+    }else if(!p.bloom){
+      p.x+=p.vx*dt;
+      p.y+=p.vy*dt;
+      p.vx*=Math.pow(.18,dt);
+      p.vy*=Math.pow(.18,dt);
+    }
+  }
+  S.particles=S.particles.filter(p=>p.life>0);
+
+  // Reveal the interface only after the visual has had time to land.
+  if(!S.deathResolved && S.deathTimer>=S.deathDuration){
+    S.deathResolved=true;
+
+    const best=Math.max(S.deathScore,+(localStorage.getItem('rocketPanicV22Best')||0));
+    localStorage.setItem('rocketPanicV22Best',String(best));
+
+    fs.textContent=S.deathScore.toLocaleString();
+    bs.textContent=best.toLocaleString();
+    ft.textContent=S.deathTime.toFixed(1)+'s';
+    fn.textContent=['I','II','III','IV','V'][S.deathStage]||'I';
+
+    overlayTitle.textContent='SIGNAL LOST';
+    overlaySub.textContent='DRIFTING ABOVE THE WORLD';
+    overlayDesc.innerHTML='Το σκάφος χάθηκε. Ο πλανήτης όμως συνεχίζει να γυρίζει από κάτω.<br><b>MISSION END // FIELD '+(['I','II','III','IV','V'][S.deathStage]||'I')+'</b>';
+
+    statsEl.style.display='grid';
+    startEl.textContent='RE-LAUNCH';
+    overlay.classList.add('death');
+    overlay.style.display='flex';
+  }
 }
 
 function difficulty(){
@@ -1439,6 +1591,10 @@ function missileVsMissile(){
 }
 
 function update(dt){
+  if(S.deathMode){
+    updateDeathScene(dt);
+    return;
+  }
   if(!S.running)return;
 
   S.t+=dt;
@@ -2384,6 +2540,84 @@ function background(){
   ctx.fillRect(0,H*.73,W,H*.27);
 }
 
+function drawDeathVista(){
+  if(!S.deathMode)return;
+
+  const q=smoothstep(0.10,1.45,S.deathTimer);
+  if(q<=0)return;
+
+  ctx.save();
+
+  // The old battlefield dissolves into a quieter, deeper orbital portrait.
+  ctx.globalAlpha=q*.74;
+  const veil=ctx.createLinearGradient(0,0,0,H);
+  veil.addColorStop(0,'rgba(1,3,11,.82)');
+  veil.addColorStop(.48,'rgba(3,7,20,.55)');
+  veil.addColorStop(1,'rgba(2,5,15,.20)');
+  ctx.fillStyle=veil;
+  ctx.fillRect(0,0,W,H);
+
+  // A broad cyan-violet nebula gives the final shot colour depth without becoming busy.
+  const neb=ctx.createRadialGradient(W*.18,H*.30,0,W*.18,H*.30,Math.max(W,H)*.72);
+  neb.addColorStop(0,'rgba(83,77,205,'+(q*.075)+')');
+  neb.addColorStop(.38,'rgba(34,103,154,'+(q*.045)+')');
+  neb.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=neb;
+  ctx.fillRect(0,0,W,H);
+
+  // More stars than gameplay, but softer: this is a memorial tableau, not a hazard field.
+  ctx.globalAlpha=1;
+  for(let i=0;i<88;i++){
+    const x=bgRand(4100+i*2.31)*W;
+    const y=bgRand(5100+i*4.17)*H*.72;
+    const tw=.56+.44*Math.sin(S.deathTimer*(.42+bgRand(i+6000)*.45)+i);
+    const rare=bgRand(7000+i*3.7);
+    ctx.globalAlpha=q*(.18+.48*tw)*(rare>.965?.90:.58);
+    ctx.fillStyle=rare>.88?'#d7ecff':'#f6fbff';
+    const s=rare>.972?1.7:(rare>.90?1.15:.72);
+    ctx.fillRect(x,y,s,s);
+  }
+
+  // Hero planet: deliberately larger and lower than during play.
+  const planetQ=smoothstep(.28,1.45,S.deathTimer);
+  const pr=W*(.50+.055*planetQ);
+  const pcx=W*(.54+.018*planetQ);
+  const pcy=H*(.82-.035*planetQ);
+  drawPlanet(pcx,pcy,pr,planetQ*.96,1,.94);
+
+  // Sunrise on the limb: the final visual punctuation.
+  const sx=pcx+pr*.66;
+  const sy=pcy-pr*.53;
+  const glowR=Math.max(W,H)*.22;
+  const sun=ctx.createRadialGradient(sx,sy,0,sx,sy,glowR);
+  sun.addColorStop(0,'rgba(255,250,224,'+(planetQ*.34)+')');
+  sun.addColorStop(.06,'rgba(255,190,108,'+(planetQ*.19)+')');
+  sun.addColorStop(.22,'rgba(255,91,198,'+(planetQ*.075)+')');
+  sun.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=sun;
+  ctx.fillRect(sx-glowR,sy-glowR,glowR*2,glowR*2);
+
+  ctx.globalAlpha=planetQ*.88;
+  ctx.fillStyle='#fff9e8';
+  ctx.shadowBlur=18;
+  ctx.shadowColor='#ffc37d';
+  ctx.beginPath();
+  ctx.arc(sx,sy,1.35,0,TAU);
+  ctx.fill();
+
+  // Cinematic vignette focuses the eye on the planet and explosion aftermath.
+  ctx.shadowBlur=0;
+  const vig=ctx.createRadialGradient(W*.51,H*.48,0,W*.51,H*.48,Math.max(W,H)*.78);
+  vig.addColorStop(0,'rgba(0,0,0,0)');
+  vig.addColorStop(.62,'rgba(0,0,0,.04)');
+  vig.addColorStop(1,'rgba(0,0,0,'+(q*.42)+')');
+  ctx.globalAlpha=1;
+  ctx.fillStyle=vig;
+  ctx.fillRect(0,0,W,H);
+
+  ctx.restore();
+}
+
 function drawControlIndicator(){
   if(!control.active)return;
 
@@ -2413,6 +2647,7 @@ function draw(){
   ctx.translate(sx,sy);
 
   background();
+  drawDeathVista();
 
   // World camera zooms; HUD/background remain stable.
   const cx=W*.5,cy=H*.415;
@@ -2485,7 +2720,7 @@ function draw(){
   }
   ctx.restore();
 
-  if(S.invuln<=0||Math.floor(S.invuln*20)%2===0){
+  if(!S.deathMode && (S.invuln<=0||Math.floor(S.invuln*20)%2===0)){
     drawRocket(player.x,player.y,player.angle,1.08,'#45f4ff',true);
   }
 
@@ -2530,7 +2765,7 @@ function draw(){
 
   ctx.restore(); // camera
 
-  drawControlIndicator();
+  if(!S.deathMode)drawControlIndicator();
 
   // Strong punctuation when the field opens.
   if(S.breakoutPulse>0){
@@ -2560,8 +2795,12 @@ function draw(){
     ctx.fillRect(0,0,W,H);
   }
   if(S.deathFlash>0){
-    ctx.fillStyle=`rgba(255,255,255,${S.deathFlash*.10})`;
+    ctx.fillStyle=`rgba(255,255,255,${S.deathFlash*.16})`;
     ctx.fillRect(0,0,W,H);
+    if(S.deathMode){
+      ctx.fillStyle=`rgba(255,92,205,${S.deathFlash*.035})`;
+      ctx.fillRect(0,0,W,H);
+    }
   }
   if(S.whiteFlash>0){
     ctx.fillStyle=`rgba(90,248,255,${S.whiteFlash*.06})`;
