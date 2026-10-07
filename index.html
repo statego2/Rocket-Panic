@@ -194,9 +194,10 @@ const control={
 let soundEnabled=true;
 let audioCtx=null;
 let audioMaster=null,musicBus=null,sfxBus=null,threatBus=null;
-let masterLimiter=null,musicComp=null,musicVerb=null,musicVerbGain=null;
+let masterLimiter=null,musicComp=null,musicVerb=null,musicVerbGain=null,sfxComp=null;
 let whiteNoiseBuffer=null,brownNoiseBuffer=null;
 let threatNoise=null,threatFilter=null,threatGain=null,threatHum=null,threatHumGain=null;
+let engineBus=null,engineNoise=null,engineNoiseFilter=null,engineNoiseGain=null,engineTone=null,engineToneGain=null;
 let audioNextStep=0,audioStep=0,audioStage=-1;
 let musicTension=0;
 
@@ -254,12 +255,22 @@ function ensureAudio(){
     musicBus.connect(musicComp);
     musicComp.connect(audioMaster);
 
+    // SFX get their own glue compressor so layered effects stay punchy on phone speakers
+    // without needing harsh individual peaks. The music path above is untouched.
     sfxBus=audioCtx.createGain();
-    sfxBus.gain.value=.61;
-    sfxBus.connect(audioMaster);
+    sfxBus.gain.value=.70;
+
+    sfxComp=audioCtx.createDynamicsCompressor();
+    sfxComp.threshold.value=-15;
+    sfxComp.knee.value=8;
+    sfxComp.ratio.value=4.2;
+    sfxComp.attack.value=.0025;
+    sfxComp.release.value=.095;
+    sfxBus.connect(sfxComp);
+    sfxComp.connect(audioMaster);
 
     threatBus=audioCtx.createGain();
-    threatBus.gain.value=.17;
+    threatBus.gain.value=.11;
     threatBus.connect(audioMaster);
 
     // Small synthetic room: enough tail to glue the score, short enough for mobile.
@@ -313,12 +324,42 @@ function ensureAudio(){
 
     threatHum=audioCtx.createOscillator();
     threatHum.type='sine';
-    threatHum.frequency.value=58;
+    threatHum.frequency.value=68;
     threatHumGain=audioCtx.createGain();
     threatHumGain.gain.value=.0001;
     threatHum.connect(threatHumGain);
     threatHumGain.connect(threatBus);
     threatHum.start();
+
+    // Player engine: a restrained turbine bed, deliberately quieter than reward/impact SFX.
+    // It reacts to actual velocity and dash state so movement feels alive without becoming a drone.
+    engineBus=audioCtx.createGain();
+    engineBus.gain.value=.32;
+    engineBus.connect(sfxBus);
+
+    engineNoise=audioCtx.createBufferSource();
+    engineNoise.buffer=brownNoiseBuffer;
+    engineNoise.loop=true;
+    engineNoiseFilter=audioCtx.createBiquadFilter();
+    engineNoiseFilter.type='bandpass';
+    engineNoiseFilter.frequency.value=520;
+    engineNoiseFilter.Q.value=.52;
+    engineNoiseGain=audioCtx.createGain();
+    engineNoiseGain.gain.value=.0001;
+    engineNoise.connect(engineNoiseFilter);
+    engineNoiseFilter.connect(engineNoiseGain);
+    engineNoiseGain.connect(engineBus);
+    engineNoise.start();
+
+    engineTone=audioCtx.createOscillator();
+    engineTone.type='triangle';
+    engineTone.frequency.value=84;
+    engineTone.detune.value=-7;
+    engineToneGain=audioCtx.createGain();
+    engineToneGain.gain.value=.0001;
+    engineTone.connect(engineToneGain);
+    engineToneGain.connect(engineBus);
+    engineTone.start();
 
     audioNextStep=audioCtx.currentTime+.07;
     audioStep=0;
@@ -612,7 +653,7 @@ function updateThreatAudio(){
 
   const sampled=Math.ceil(S.missiles.length/sampleStep)||1;
   const speed=Math.min(1,(speedSum/sampled)/560);
-  const near=Math.max(0,1-Math.min(1,nearest/175));
+  const near=Math.max(0,1-Math.min(1,nearest/180));
   const wounded=(3-player.hp)/2;
 
   const targetTension=Math.max(0,Math.min(1,
@@ -620,14 +661,25 @@ function updateThreatAudio(){
   ));
   musicTension+=(targetTension-musicTension)*.075;
 
-  // Missile bed follows physical pressure; the MUSIC follows the smoothed tension.
-  const rumble=.00018 + count*.0048 + speed*.0017 + near*.0054;
-  setParam(threatGain.gain,Math.min(.0125,rumble),.11);
-  setParam(threatFilter.frequency,185 + speed*210 + count*150 + near*120,.13);
+  // Threat bed is now felt more than heard. Near-miss transients carry the excitement.
+  const rumble=.00008 + count*.0019 + speed*.00055 + near*.0024;
+  setParam(threatGain.gain,Math.min(.0048,rumble),.10);
+  setParam(threatFilter.frequency,145 + speed*155 + count*105 + near*145,.10);
 
   if(threatHum&&threatHumGain){
-    setParam(threatHum.frequency,54 + speed*24 + count*12 + stage*3,.15);
-    setParam(threatHumGain.gain,.00016 + count*.0022 + near*.0027,.14);
+    setParam(threatHum.frequency,62 + speed*14 + count*7 + stage*2,.12);
+    setParam(threatHumGain.gain,.00005 + count*.00055 + near*.00085,.10);
+  }
+
+  // Rocket engine follows movement: soft turbine at cruise, brighter burst during dash.
+  if(engineNoiseGain&&engineNoiseFilter&&engineTone&&engineToneGain){
+    const v=Math.hypot(player.vx,player.vy);
+    const thrust=Math.max(0,Math.min(1,(v-80)/(player.max-80)));
+    const dash=S.dashT>0?1:0;
+    setParam(engineNoiseFilter.frequency,430 + thrust*520 + dash*920,.045);
+    setParam(engineNoiseGain.gain,.0020 + thrust*.0043 + dash*.0095,.035);
+    setParam(engineTone.frequency,78 + thrust*28 + dash*44,.05);
+    setParam(engineToneGain.gain,.0016 + thrust*.0020 + dash*.0035,.045);
   }
 
   if(musicVerbGain){
@@ -641,10 +693,22 @@ function updateAudio(){
   scheduleMusic();
 }
 
-function tone(freq=440,dur=.08,vol=.035,type='sine',slide=0){
+function sfxOut(node,pan=0){
+  const ac=audioCtx;
+  if(!ac||!node)return;
+  if(typeof ac.createStereoPanner==='function'){
+    const p=ac.createStereoPanner();
+    p.pan.value=Math.max(-1,Math.min(1,pan));
+    node.connect(p);p.connect(sfxBus||ac.destination);
+  }else{
+    node.connect(sfxBus||ac.destination);
+  }
+}
+
+function tone(freq=440,dur=.08,vol=.035,type='sine',slide=0,delay=0,attack=.004,pan=0){
   const ac=ensureAudio();
   if(!ac)return;
-  const now=ac.currentTime;
+  const now=ac.currentTime+Math.max(0,delay);
   const o=ac.createOscillator();
   const g=ac.createGain();
   o.type=type;
@@ -653,121 +717,141 @@ function tone(freq=440,dur=.08,vol=.035,type='sine',slide=0){
     o.frequency.exponentialRampToValueAtTime(Math.max(30,freq+slide),now+dur);
   }
   g.gain.setValueAtTime(.0001,now);
-  g.gain.exponentialRampToValueAtTime(Math.max(.0002,vol),now+.006);
+  g.gain.exponentialRampToValueAtTime(Math.max(.0002,vol),now+Math.min(dur*.45,Math.max(.001,attack)));
   g.gain.exponentialRampToValueAtTime(.0001,now+dur);
-  o.connect(g);g.connect(sfxBus||ac.destination);
-  o.start(now);o.stop(now+dur+.02);
+  o.connect(g);sfxOut(g,pan);
+  o.start(now);o.stop(now+dur+.025);
 }
 
-function noiseBurst(dur=.07,vol=.025,center=900,highpass=false){
+function noiseBurst(dur=.07,vol=.025,startFreq=900,highpass=false,endFreq=startFreq,delay=0,pan=0,useBrown=false,q=.72,attack=.003){
   const ac=ensureAudio();
   if(!ac||!whiteNoiseBuffer)return;
   const src=ac.createBufferSource();
   const f=ac.createBiquadFilter();
   const g=ac.createGain();
-  src.buffer=whiteNoiseBuffer;
+  src.buffer=useBrown&&brownNoiseBuffer?brownNoiseBuffer:whiteNoiseBuffer;
   f.type=highpass?'highpass':'bandpass';
-  f.frequency.value=center;
-  f.Q.value=.72;
-  const now=ac.currentTime;
-  g.gain.setValueAtTime(Math.max(.0002,vol),now);
+  f.Q.value=q;
+  const now=ac.currentTime+Math.max(0,delay);
+  f.frequency.setValueAtTime(Math.max(40,startFreq),now);
+  if(endFreq&&Math.abs(endFreq-startFreq)>1){
+    f.frequency.exponentialRampToValueAtTime(Math.max(40,endFreq),now+dur);
+  }
+  g.gain.setValueAtTime(.0001,now);
+  g.gain.exponentialRampToValueAtTime(Math.max(.0002,vol),now+Math.min(dur*.35,Math.max(.001,attack)));
   g.gain.exponentialRampToValueAtTime(.0001,now+dur);
-  src.connect(f);f.connect(g);g.connect(sfxBus||ac.destination);
-  src.start(now);src.stop(now+dur+.02);
+  src.connect(f);f.connect(g);sfxOut(g,pan);
+  src.start(now);src.stop(now+dur+.025);
 }
 
-function whoosh(dur=.28,vol=.028,up=false){
+function whoosh(dur=.28,vol=.028,up=false,pan=0,delay=0){
   const ac=ensureAudio();
   if(!ac||!whiteNoiseBuffer)return;
-  const now=ac.currentTime;
+  const now=ac.currentTime+Math.max(0,delay);
   const src=ac.createBufferSource();
   const f=ac.createBiquadFilter();
   const g=ac.createGain();
   src.buffer=whiteNoiseBuffer;
   f.type='bandpass';
-  f.Q.value=.55;
-  if(up){
-    f.frequency.setValueAtTime(320,now);
-    f.frequency.exponentialRampToValueAtTime(3600,now+dur);
-  }else{
-    f.frequency.setValueAtTime(3200,now);
-    f.frequency.exponentialRampToValueAtTime(300,now+dur);
-  }
+  f.Q.value=.48;
+  f.frequency.setValueAtTime(up?260:4300,now);
+  f.frequency.exponentialRampToValueAtTime(up?5200:240,now+dur);
   g.gain.setValueAtTime(.0001,now);
-  g.gain.exponentialRampToValueAtTime(vol,now+.035);
+  g.gain.exponentialRampToValueAtTime(vol,now+Math.min(.045,dur*.28));
   g.gain.exponentialRampToValueAtTime(.0001,now+dur);
-  src.connect(f);f.connect(g);g.connect(sfxBus||ac.destination);
-  src.start(now);src.stop(now+dur+.02);
+  src.connect(f);f.connect(g);sfxOut(g,pan);
+  src.start(now);src.stop(now+dur+.025);
+}
+
+function sfxLaunch(){
+  if(!soundEnabled)return;
+  const v=.96+Math.random()*.07;
+  noiseBurst(.075,.010,5200,true,2800,0,0,false,.55,.002);
+  whoosh(.31,.020,true,0,.018);
+  tone(112*v,.28,.019,'triangle',235,.018,.010,0);
+  tone(224*v,.16,.0065,'sine',180,.055,.008,0);
 }
 
 function sfxFlyby(strength=1){
   if(!soundEnabled)return;
-  const ac=ensureAudio();
-  if(!ac||!whiteNoiseBuffer)return;
-
-  const now=ac.currentTime;
-  const dur=.14+Math.min(.10,strength*.035);
-
-  const src=ac.createBufferSource();
-  const bp=ac.createBiquadFilter();
-  const g=ac.createGain();
-  src.buffer=whiteNoiseBuffer;
-  bp.type='bandpass';
-  bp.Q.value=1.0;
-  bp.frequency.setValueAtTime(2100+strength*260,now);
-  bp.frequency.exponentialRampToValueAtTime(420,now+dur);
-  const vol=.0075+Math.min(.012,strength*.004);
-  g.gain.setValueAtTime(.0001,now);
-  g.gain.exponentialRampToValueAtTime(vol,now+.018);
-  g.gain.exponentialRampToValueAtTime(.0001,now+dur);
-  src.connect(bp);bp.connect(g);g.connect(sfxBus);
-  src.start(now);src.stop(now+dur+.02);
-
-  // Doppler-ish engine body. Short enough that multiple missiles do not become a drone.
-  const o=ac.createOscillator();
-  const og=ac.createGain();
-  o.type='sine';
-  o.frequency.setValueAtTime(174+strength*19,now);
-  o.frequency.exponentialRampToValueAtTime(78,now+dur);
-  og.gain.setValueAtTime(.0001,now);
-  og.gain.exponentialRampToValueAtTime(.0048+strength*.0014,now+.014);
-  og.gain.exponentialRampToValueAtTime(.0001,now+dur);
-  o.connect(og);og.connect(sfxBus);
-  o.start(now);o.stop(now+dur+.02);
+  const s=Math.max(.65,Math.min(2.2,strength));
+  const pan=(Math.random()*2-1)*.38;
+  const dur=.145+Math.min(.09,s*.032);
+  whoosh(dur,.016+s*.005,false,pan);
+  tone(255+s*34,dur*.88,.0045+s*.0018,'triangle',-(150+s*24),.004,.006,pan);
+  noiseBurst(.035,.0048+s*.0012,5200,true,2500,.012,-pan*.55,false,.7,.0015);
 }
 
 function sfxExplosion(power=1){
   if(!soundEnabled)return;
-  noiseBurst(.075+.025*power,.012+.007*power,620);
-  tone(116,.105,.012*power,'sine',-55);
+  const p=Math.max(.55,Math.min(1.8,power));
+  const v=.93+Math.random()*.14;
+  const pan=(Math.random()*2-1)*.18;
+  noiseBurst(.035,.013*p,4300,true,1650,0,pan,false,.48,.001);
+  noiseBurst(.19+.035*p,.016*p,980*v,false,165,.006,pan*.4,true,.56,.002);
+  tone(94*v,.24+.035*p,.020*p,'sine',-56,.003,.002,pan*.25);
+  tone(188*v,.085,.0065*p,'triangle',-72,.008,.001,-pan*.35);
 }
+
 function sfxNear(){
   if(!soundEnabled)return;
-  tone(920+Math.min(260,S.combo*25),.030,.0058,'sine',90);
+  const reward=Math.min(1,(S.combo-1)/8);
+  const f=780+reward*260;
+  const pan=(Math.random()*2-1)*.22;
+  noiseBurst(.020,.0055,4600,true,7200,0,pan,false,.5,.001);
+  tone(f,.055,.0105,'triangle',120,.002,.002,pan);
+  tone(f*1.5,.070,.0075,'sine',90,.026,.003,-pan*.45);
 }
+
 function sfxHit(){
   if(!soundEnabled)return;
-  tone(92,.15,.036,'sawtooth',-44);
-  noiseBurst(.075,.020,390);
+  const pan=(Math.random()*2-1)*.12;
+  noiseBurst(.052,.026,3300,true,720,0,pan,false,.52,.001);
+  noiseBurst(.13,.016,720,false,185,.005,-pan*.3,true,.65,.001);
+  tone(168,.16,.023,'triangle',-102,.002,.001,pan);
+  tone(68,.22,.015,'sine',-28,.006,.002,0);
 }
+
+function sfxDeath(){
+  if(!soundEnabled)return;
+  noiseBurst(.060,.034,4800,true,950,0,0,false,.45,.001);
+  noiseBurst(.36,.030,880,false,120,.008,0,true,.52,.002);
+  tone(102,.42,.035,'sine',-66,.002,.002,0);
+  tone(286,.20,.012,'sawtooth',-190,.018,.002,0);
+  whoosh(.31,.018,false,0,.045);
+}
+
 function sfxShield(){
   if(!soundEnabled)return;
-  tone(480,.11,.013,'sine',250);
-  setTimeout(()=>tone(720,.10,.010,'triangle',190),38);
+  const pan=(Math.random()*2-1)*.10;
+  noiseBurst(.13,.0055,3100,true,6900,0,pan,false,.55,.012);
+  tone(510,.145,.0105,'sine',220,0,.008,pan);
+  tone(765,.145,.0090,'sine',260,.042,.008,-pan);
+  tone(1148,.18,.0062,'triangle',300,.087,.010,0);
 }
+
 function sfxDash(){
   if(!soundEnabled)return;
-  whoosh(.14,.020,true);
-  tone(150,.10,.014,'triangle',260);
+  const pan=(Math.random()*2-1)*.12;
+  whoosh(.17,.030,true,pan);
+  tone(132,.135,.017,'triangle',245,.008,.003,-pan*.35);
+  noiseBurst(.040,.010,5600,true,2200,.072,-pan,false,.5,.001);
 }
+
 function sfxBreakout(stage){
   if(!soundEnabled)return;
-  // One cinematic punctuation: inhale -> impact -> sub drop.
-  whoosh(.34,.030,true);
-  setTimeout(()=>{
-    tone(74+stage*3,.24,.042,'sine',-28);
-    noiseBurst(.10,.018,310);
-  },95);
+  const root=72+stage*3;
+  whoosh(.41,.026,true,0,0);
+  noiseBurst(.065,.014,6100,true,1800,.105,0,false,.48,.001);
+  noiseBurst(.20,.019,760,false,150,.112,0,true,.55,.002);
+  tone(root,.31,.031,'sine',-34,.108,.002,0);
+  tone(760+stage*70,.18,.0075,'triangle',360,.145,.006,0);
+}
+
+function sfxUiToggle(on){
+  if(!soundEnabled)return;
+  noiseBurst(.016,.0045,5200,true,7200,0,0,false,.45,.001);
+  tone(on?720:430,.045,.0065,'sine',on?90:-80,.002,.001,0);
 }
 
 function fadeAudioForMenu(){
@@ -775,6 +859,8 @@ function fadeAudioForMenu(){
   if(musicBus)setParam(musicBus.gain,.10,.12);
   if(threatGain)setParam(threatGain.gain,.0001,.05);
   if(threatHumGain)setParam(threatHumGain.gain,.0001,.05);
+  if(engineNoiseGain)setParam(engineNoiseGain.gain,.0001,.055);
+  if(engineToneGain)setParam(engineToneGain.gain,.0001,.055);
 }
 
 
@@ -783,19 +869,21 @@ function shockwave(x,y,color='#fff',power=1){
 }
 
 soundToggleEl.addEventListener('click',()=>{
-  soundEnabled=!soundEnabled;
-  soundToggleEl.textContent='SOUND: '+(soundEnabled?'ON':'OFF');
-
   if(soundEnabled){
+    sfxUiToggle(false);
+    soundEnabled=false;
+    soundToggleEl.textContent='SOUND: OFF';
+    if(audioCtx&&audioMaster)setParam(audioMaster.gain,.0001,.045);
+  }else{
+    soundEnabled=true;
+    soundToggleEl.textContent='SOUND: ON';
     ensureAudio();
     if(audioCtx){
       audioNextStep=audioCtx.currentTime+.05;
       audioStep=0;
-      setParam(audioMaster.gain,.78,.03);
+      setParam(audioMaster.gain,.78,.035);
     }
-    tone(440,.055,.012,'sine',70);
-  }else if(audioCtx&&audioMaster){
-    setParam(audioMaster.gain,.0001,.03);
+    sfxUiToggle(true);
   }
 });
 
@@ -858,6 +946,7 @@ function start(){
     }
   }
   reset();S.running=true;
+  if(soundEnabled)sfxLaunch();
   overlay.style.display='none';
 }
 
@@ -866,7 +955,7 @@ function gameOver(){
   S.running=false;
   burst(player.x,player.y,34,'#77fbff',1.8);
   shockwave(player.x,player.y,'#77fbff',1.25);
-  sfxHit();sfxExplosion(1.4);
+  sfxDeath();
   fadeAudioForMenu();
   S.shake=14;S.deathFlash=1;
   const best=Math.max(Math.floor(S.score),+(localStorage.getItem('rocketPanicV22Best')||0));
@@ -1533,10 +1622,10 @@ function update(dt){
         S.invuln=.68;
         S.damageFlash=1;
         S.combo=1;
-        sfxHit();
         S.shieldRegenDelay=6.5;
         S.shieldRegenProgress=0;
         if(player.hp<=0){gameOver();return}
+        sfxHit();
       }
     }
 
@@ -1569,10 +1658,10 @@ function update(dt){
         S.invuln=.64;
         S.damageFlash=1;
         S.combo=1;
-        sfxHit();
         S.shieldRegenDelay=6.5;
         S.shieldRegenProgress=0;
         if(player.hp<=0){gameOver();return}
+        sfxHit();
       }
     }
 
