@@ -117,6 +117,340 @@ button{
   margin-top:9px;background:rgba(255,255,255,.045);color:rgba(225,244,255,.72);
   border:1px solid rgba(255,255,255,.09);font-size:10px;padding:11px 14px;
 }
+
+/* -------------------------------------------------------------------------- */
+/* CINEMATIC LAUNCH SCREEN                                                     */
+/* -------------------------------------------------------------------------- */
+#overlay.start-menu{
+  z-index:8;
+  align-items:stretch;
+  justify-content:center;
+  padding:calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 16px);
+  background:
+    radial-gradient(circle at 78% 17%,rgba(255,153,81,.07),transparent 27%),
+    radial-gradient(circle at 18% 44%,rgba(67,245,255,.055),transparent 32%),
+    linear-gradient(180deg,rgba(1,3,10,.16) 0%,rgba(2,4,14,.05) 35%,rgba(2,4,14,.32) 65%,rgba(1,3,10,.93) 100%);
+  backdrop-filter:none;
+  overflow:hidden;
+}
+#overlay.start-menu::before{
+  content:"";
+  position:absolute;
+  left:50%;top:44%;
+  width:min(104vw,560px);height:min(104vw,560px);
+  transform:translate(-50%,-50%);
+  border:1px solid rgba(105,242,255,.055);
+  border-radius:50%;
+  box-shadow:
+    0 0 0 42px rgba(105,242,255,.018),
+    0 0 0 96px rgba(162,119,255,.014);
+  pointer-events:none;
+}
+#overlay.start-menu::after{
+  content:"";
+  position:absolute;
+  left:8%;right:8%;bottom:31%;
+  height:1px;
+  background:linear-gradient(90deg,transparent,rgba(108,242,255,.16),rgba(255,87,202,.12),transparent);
+  box-shadow:0 0 18px rgba(74,242,255,.08);
+  pointer-events:none;
+}
+.start-menu .panel{
+  position:relative;
+  z-index:1;
+  width:min(100%,430px);
+  height:100%;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  display:flex;
+  flex-direction:column;
+  text-align:left;
+}
+.launch-topline{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  min-height:28px;
+  font-size:8px;
+  font-weight:800;
+  letter-spacing:.19em;
+  color:rgba(220,241,255,.44);
+}
+.launch-status{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  color:rgba(164,245,255,.74);
+}
+.launch-status i{
+  width:5px;height:5px;border-radius:50%;
+  background:#65f7ff;
+  box-shadow:0 0 10px rgba(101,247,255,.85);
+  animation:launchPulse 1.8s ease-in-out infinite;
+}
+.launch-best{
+  color:rgba(230,243,255,.52);
+}
+.launch-best b{
+  margin-left:5px;
+  color:#fff;
+  font-size:9px;
+  letter-spacing:.09em;
+}
+.launch-hero{
+  margin-top:clamp(58px,10vh,104px);
+  animation:launchHeroIn .9s cubic-bezier(.2,.76,.18,1) both;
+}
+.launch-kicker{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:10px;
+  color:rgba(119,239,255,.62);
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.28em;
+}
+.launch-kicker::before{
+  content:"";
+  width:25px;height:1px;
+  background:linear-gradient(90deg,#5df4ff,rgba(93,244,255,0));
+  box-shadow:0 0 9px rgba(93,244,255,.45);
+}
+.start-menu h1{
+  margin:0;
+  max-width:340px;
+  color:#f7fdff;
+  font-size:clamp(42px,12.8vw,58px);
+  line-height:.82;
+  letter-spacing:-.035em;
+  text-align:left;
+  text-shadow:0 0 30px rgba(117,232,255,.08);
+}
+.start-menu h1 span{
+  display:block;
+  margin-left:clamp(26px,8vw,42px);
+  color:transparent;
+  background:linear-gradient(92deg,#ffffff 2%,#76f7ff 38%,#c792ff 69%,#ff6dcf 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  filter:drop-shadow(0 0 14px rgba(105,240,255,.11));
+}
+.start-menu .sub{
+  margin-top:13px;
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.29em;
+  color:rgba(231,244,255,.46);
+}
+.start-menu .desc{
+  max-width:285px;
+  margin:10px 0 0;
+  font-size:10px;
+  line-height:1.55;
+  color:rgba(221,239,255,.58);
+}
+.start-menu .desc b{
+  color:rgba(255,255,255,.94);
+}
+.launch-spacer{flex:1;min-height:74px}
+.launch-console{
+  position:relative;
+  padding:14px 14px 13px;
+  border:1px solid rgba(164,231,255,.095);
+  border-radius:18px;
+  background:linear-gradient(180deg,rgba(10,16,37,.64),rgba(4,7,19,.84));
+  box-shadow:
+    0 -22px 70px rgba(49,218,255,.035),
+    0 24px 70px rgba(0,0,0,.34),
+    inset 0 1px 0 rgba(255,255,255,.025);
+  backdrop-filter:blur(12px) saturate(125%);
+  overflow:hidden;
+  animation:launchConsoleIn 1s .08s cubic-bezier(.2,.76,.18,1) both;
+}
+.launch-console::before{
+  content:"";
+  position:absolute;left:0;top:0;width:36%;height:1px;
+  background:linear-gradient(90deg,#62f5ff,transparent);
+  opacity:.72;
+  box-shadow:0 0 12px rgba(98,245,255,.3);
+}
+.route-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:12px;
+  font-size:7px;
+  font-weight:900;
+  letter-spacing:.19em;
+  color:rgba(215,239,255,.42);
+}
+.route-head strong{
+  color:rgba(140,244,255,.72);
+  font-size:7px;
+  letter-spacing:.17em;
+}
+.field-route{
+  position:relative;
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  margin:0 3px 12px;
+}
+.field-route::before{
+  content:"";
+  position:absolute;
+  left:9%;right:9%;top:6px;
+  height:1px;
+  background:linear-gradient(90deg,rgba(86,246,255,.62),rgba(124,181,255,.34),rgba(184,122,255,.34),rgba(255,102,202,.46));
+  box-shadow:0 0 7px rgba(84,237,255,.16);
+}
+.field-node{
+  position:relative;
+  z-index:1;
+  text-align:center;
+  color:rgba(221,239,255,.38);
+  font-size:7px;
+  font-weight:900;
+  letter-spacing:.09em;
+}
+.field-node i{
+  display:block;
+  width:12px;height:12px;
+  margin:0 auto 6px;
+  border:1px solid rgba(194,230,255,.23);
+  border-radius:50%;
+  background:#091025;
+  box-shadow:0 0 0 3px rgba(5,9,23,.9);
+}
+.field-node:first-child i{
+  border-color:#6af5ff;
+  background:#6af5ff;
+  box-shadow:0 0 0 3px rgba(5,9,23,.92),0 0 13px rgba(93,244,255,.64);
+}
+.field-node:last-child i{
+  border-color:rgba(255,109,207,.64);
+}
+.route-ends{
+  display:flex;
+  justify-content:space-between;
+  margin:-2px 3px 12px;
+  font-size:6px;
+  font-weight:800;
+  letter-spacing:.16em;
+  color:rgba(213,236,255,.26);
+}
+.controls-strip{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:7px;
+  margin-bottom:10px;
+}
+.control-chip{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-height:45px;
+  padding:8px 9px;
+  border:1px solid rgba(255,255,255,.055);
+  border-radius:11px;
+  background:rgba(255,255,255,.018);
+}
+.control-icon{
+  display:grid;
+  place-items:center;
+  flex:0 0 27px;
+  width:27px;height:27px;
+  border:1px solid rgba(104,240,255,.15);
+  border-radius:8px;
+  color:#83f7ff;
+  background:rgba(63,227,255,.035);
+  font-size:12px;
+  box-shadow:inset 0 0 14px rgba(67,245,255,.02);
+}
+.control-copy b{
+  display:block;
+  color:rgba(247,252,255,.86);
+  font-size:8px;
+  letter-spacing:.12em;
+}
+.control-copy span{
+  display:block;
+  margin-top:2px;
+  color:rgba(221,239,255,.31);
+  font-size:6px;
+  letter-spacing:.08em;
+}
+.start-menu #start{
+  position:relative;
+  overflow:hidden;
+  min-height:51px;
+  padding:15px 16px;
+  border-radius:12px;
+  background:linear-gradient(94deg,#63f6ff 0%,#82dfff 38%,#c28cff 68%,#ff73d4 100%);
+  color:#020611;
+  box-shadow:0 0 24px rgba(91,240,255,.12),0 10px 30px rgba(0,0,0,.16);
+  font-size:13px;
+  letter-spacing:.15em;
+}
+.start-menu #start::after{
+  content:"›";
+  position:absolute;
+  right:16px;top:50%;
+  transform:translateY(-53%);
+  font-size:23px;
+  font-weight:500;
+}
+.start-menu #soundToggle{
+  width:auto;
+  align-self:center;
+  margin:8px auto 0;
+  padding:7px 11px;
+  border:0;
+  background:transparent;
+  color:rgba(218,239,255,.38);
+  font-size:7px;
+  letter-spacing:.17em;
+}
+.launch-footer{
+  margin-top:8px;
+  text-align:center;
+  color:rgba(215,237,255,.20);
+  font-size:6px;
+  font-weight:800;
+  letter-spacing:.19em;
+}
+.start-menu .stats{display:none!important}
+@keyframes launchPulse{
+  0%,100%{opacity:.5;transform:scale(.88)}
+  50%{opacity:1;transform:scale(1.18)}
+}
+@keyframes launchHeroIn{
+  from{opacity:0;transform:translateY(12px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes launchConsoleIn{
+  from{opacity:0;transform:translateY(18px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@media(max-height:720px){
+  .launch-hero{margin-top:34px}
+  .launch-spacer{min-height:35px}
+  .start-menu h1{font-size:39px}
+  .start-menu .desc{font-size:9px}
+  .launch-console{padding:11px}
+  .control-chip{min-height:40px}
+}
+@media(max-height:640px){
+  .launch-hero{margin-top:18px}
+  .launch-spacer{min-height:18px}
+  .start-menu .desc{display:none}
+  .route-ends{display:none}
+  .field-route{margin-bottom:9px}
+  .launch-footer{display:none}
+}
 #landscape{
   display:none;position:absolute;inset:0;z-index:20;align-items:center;justify-content:center;
   text-align:center;color:white;background:#080a22;padding:30px;
@@ -143,24 +477,57 @@ button{
 
 <div id="hint">SURVIVE DEEP ORBIT</div>
 
-<div id="overlay">
+<div id="overlay" class="start-menu">
   <div class="panel">
-    <h1 id="overlayTitle">ROCKET PANIC</h1>
-    <div class="sub" id="overlaySub">CONTROL FIX</div>
-    <div class="desc" id="overlayDesc">
-      Ένα <b>original adaptive score</b> που εξελίσσεται μαζί με το run.<br>
-      Το ίδιο μουσικό θέμα περνά από πέντε μορφές: ατμόσφαιρα → παλμός → καταδίωξη → πανικός → <b>deep-orbit climax</b>.<br>
-      Η πυκνότητα των απειλών αλλάζει διακριτικά το tension και το timbre χωρίς να πνίγει τη μουσική.<br><br>
-      SOUND ξεκινά ON. Δεύτερο δάχτυλο → DASH.
+    <div class="launch-only launch-topline">
+      <div class="launch-status"><i></i><span>FLIGHT SYSTEM // READY</span></div>
+      <div class="launch-best">BEST <b id="menuBest">000000</b></div>
     </div>
+
+    <div class="launch-hero">
+      <div class="launch-only launch-kicker">DEEP ORBIT SURVIVAL</div>
+      <h1 id="overlayTitle">ROCKET <span>PANIC</span></h1>
+      <div class="sub" id="overlaySub">ONE RUN // FIVE FIELDS // NO BRAKES</div>
+      <div class="desc" id="overlayDesc">
+        Climb through <b>five escalating flight zones</b> while the sky fills with hunters. Survive long enough to leave the world behind.
+      </div>
+    </div>
+
+    <div class="launch-only launch-spacer"></div>
+
+    <div class="launch-only launch-console">
+      <div class="route-head"><span>ASCENT ROUTE</span><strong>FIELD I → V</strong></div>
+      <div class="field-route">
+        <div class="field-node"><i></i>I</div>
+        <div class="field-node"><i></i>II</div>
+        <div class="field-node"><i></i>III</div>
+        <div class="field-node"><i></i>IV</div>
+        <div class="field-node"><i></i>V</div>
+      </div>
+      <div class="route-ends"><span>LAUNCH SITE</span><span>DEEP ORBIT</span></div>
+
+      <div class="controls-strip">
+        <div class="control-chip">
+          <div class="control-icon">↗</div>
+          <div class="control-copy"><b>DRAG TO STEER</b><span>DIRECT FLIGHT CONTROL</span></div>
+        </div>
+        <div class="control-chip">
+          <div class="control-icon">Ⅱ</div>
+          <div class="control-copy"><b>2ND TOUCH</b><span>EMERGENCY DASH</span></div>
+        </div>
+      </div>
+
+      <button id="start">BEGIN ASCENT</button>
+      <button id="soundToggle">SOUND // ON</button>
+      <div class="launch-footer">SURVIVE // CLIMB // BREAK ORBIT</div>
+    </div>
+
     <div id="stats" class="stats" style="display:none">
       <div class="card"><b id="fs">0</b><span>SCORE</span></div>
       <div class="card"><b id="bs">0</b><span>BEST</span></div>
       <div class="card"><b id="ft">0.0s</b><span>SURVIVED</span></div>
       <div class="card"><b id="fn">I</b><span>FIELD REACHED</span></div>
     </div>
-    <button id="start">LAUNCH</button>
-    <button id="soundToggle">SOUND: ON</button>
   </div>
 </div>
 
@@ -191,6 +558,7 @@ const fs=document.getElementById('fs');
 const bs=document.getElementById('bs');
 const ft=document.getElementById('ft');
 const fn=document.getElementById('fn');
+const menuBest=document.getElementById('menuBest');
 
 const TAU=Math.PI*2;
 let W=0,H=0,DPR=1,last=performance.now();
@@ -1036,11 +1404,14 @@ function reset(){
   audioStage=-1;
   app.classList.remove('death');
   overlay.classList.remove('death');
-  overlayTitle.textContent='ROCKET PANIC';
-  overlaySub.textContent='CONTROL FIX';
-  overlayDesc.innerHTML='Ένα <b>original adaptive score</b> που εξελίσσεται μαζί με το run.<br>Το ίδιο μουσικό θέμα περνά από πέντε μορφές: ατμόσφαιρα → παλμός → καταδίωξη → πανικός → <b>deep-orbit climax</b>.<br>Η πυκνότητα των απειλών αλλάζει διακριτικά το tension και το timbre χωρίς να πνίγει τη μουσική.<br><br>SOUND ξεκινά ON. Δεύτερο δάχτυλο → DASH.';
+  overlay.classList.add('start-menu');
+  overlayTitle.innerHTML='ROCKET <span>PANIC</span>';
+  overlaySub.textContent='ONE RUN // FIVE FIELDS // NO BRAKES';
+  overlayDesc.innerHTML='Climb through <b>five escalating flight zones</b> while the sky fills with hunters. Survive long enough to leave the world behind.';
   statsEl.style.display='none';
-  startEl.textContent='LAUNCH';
+  startEl.textContent='BEGIN ASCENT';
+  const storedBest=+(localStorage.getItem('rocketPanicV22Best')||0);
+  if(menuBest)menuBest.textContent=Math.floor(storedBest).toString().padStart(6,'0');
   hud();
 }
 
@@ -1261,12 +1632,14 @@ function updateDeathScene(dt){
       'Χάθηκες στο deep orbit. Ο πλανήτης γυρίζει από κάτω και η μάχη συνεχίζεται.'
     ];
 
+    overlay.classList.remove('start-menu');
     overlayTitle.textContent='SIGNAL LOST';
     overlaySub.textContent=subs[S.deathStage]||subs[0];
     overlayDesc.innerHTML=lines[S.deathStage]+'<br><b>MISSION END // FIELD '+(['I','II','III','IV','V'][S.deathStage]||'I')+'</b>';
 
     statsEl.style.display='grid';
     startEl.textContent='RE-LAUNCH';
+    if(menuBest)menuBest.textContent=Math.floor(best).toString().padStart(6,'0');
     overlay.classList.add('death');
     overlay.style.display='flex';
   }
