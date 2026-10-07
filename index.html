@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Rocket Panic">
-<title>ROCKET PANIC V20</title>
+<title>ROCKET PANIC V21</title>
 <style>
 :root{
   --cyan:#43f5ff;
@@ -107,11 +107,11 @@ button{
 <div id="overlay">
   <div class="panel">
     <h1>ROCKET PANIC</h1>
-    <div class="sub">SYNTHWAVE SOUNDTRACK</div>
+    <div class="sub">MISSILE AUDIO REWORK</div>
     <div class="desc">
-      Νέο <b>κανονικό procedural synthwave soundtrack</b>: beat, bass, arpeggio και pad με μουσικές νότες — όχι απλό drone.<br>
-      Κάθε BREAKOUT προσθέτει ένταση, ρυθμό και layers. Το missile ambience μένει χαμηλά πίσω από τη μουσική και ανεβαίνει μόνο όταν το swarm γίνεται πραγματικά απειλητικό.<br>
-      Ο ήχος της αλλαγής field έγινε πιο σύντομος και κινηματογραφικός, χωρίς το παλιό chime.<br><br>
+      Το soundtrack μένει όπως είναι, αλλά το <b>missile audio ξαναχτίστηκε</b>.<br>
+      Έφυγε το περίεργο constant hiss. Το swarm πλέον δίνει χαμηλό engine/air rumble όταν πυκνώνει, ενώ οι κοντινοί πύραυλοι κάνουν σύντομο <b>flyby whoosh</b> όταν περνούν ξυστά.<br>
+      Έτσι η μουσική παραμένει καθαρή και ο φόβος έρχεται από πραγματικές κοντινές διελεύσεις αντί για μόνιμο ηλεκτρονικό βουητό.<br><br>
       SOUND ξεκινά ON. Δεύτερο δάχτυλο → DASH.
     </div>
     <div id="stats" class="stats" style="display:none">
@@ -194,7 +194,7 @@ const control={
 let soundEnabled=true;
 let audioCtx=null;
 let audioMaster=null,musicBus=null,sfxBus=null,threatBus=null;
-let threatNoise=null,threatFilter=null,threatGain=null;
+let threatNoise=null,threatFilter=null,threatGain=null,threatHum=null,threatHumGain=null;
 let audioNextStep=0,audioStep=0,audioStage=-1;
 
 function ensureAudio(){
@@ -220,20 +220,26 @@ function ensureAudio(){
     threatBus.gain.value=.18;
     threatBus.connect(audioMaster);
 
-    // One shared filtered-noise bed for the entire missile swarm.
+    // Shared missile rumble. Brown-ish noise sounds more like distant engines / air
+    // and less like radio static.
     const len=audioCtx.sampleRate*2;
     const buf=audioCtx.createBuffer(1,len,audioCtx.sampleRate);
     const data=buf.getChannelData(0);
-    for(let i=0;i<len;i++)data[i]=Math.random()*2-1;
+    let brown=0;
+    for(let i=0;i<len;i++){
+      const white=Math.random()*2-1;
+      brown=(brown*.985)+(white*.055);
+      data[i]=Math.max(-1,Math.min(1,brown*2.2));
+    }
 
     threatNoise=audioCtx.createBufferSource();
     threatNoise.buffer=buf;
     threatNoise.loop=true;
 
     threatFilter=audioCtx.createBiquadFilter();
-    threatFilter.type='bandpass';
-    threatFilter.frequency.value=480;
-    threatFilter.Q.value=.7;
+    threatFilter.type='lowpass';
+    threatFilter.frequency.value=320;
+    threatFilter.Q.value=.5;
 
     threatGain=audioCtx.createGain();
     threatGain.gain.value=.0001;
@@ -242,6 +248,16 @@ function ensureAudio(){
     threatFilter.connect(threatGain);
     threatGain.connect(threatBus);
     threatNoise.start();
+
+    // Very subtle low engine tone underneath the rumble.
+    threatHum=audioCtx.createOscillator();
+    threatHum.type='triangle';
+    threatHum.frequency.value=74;
+    threatHumGain=audioCtx.createGain();
+    threatHumGain.gain.value=.0001;
+    threatHum.connect(threatHumGain);
+    threatHumGain.connect(threatBus);
+    threatHum.start();
 
     audioNextStep=audioCtx.currentTime+.08;
     audioStep=0;
@@ -377,7 +393,7 @@ function scheduleMusic(){
 function updateThreatAudio(){
   if(!soundEnabled||!audioCtx||!S.running||!threatGain)return;
 
-  const count=Math.min(1,S.missiles.length/52);
+  const count=Math.min(1,S.missiles.length/56);
   let nearest=9999;
   let speedSum=0;
   const sampleStep=Math.max(1,Math.floor(S.missiles.length/14));
@@ -390,13 +406,18 @@ function updateThreatAudio(){
 
   const sampled=Math.ceil(S.missiles.length/sampleStep)||1;
   const avgScreenSpeed=speedSum/sampled;
-  const speed=Math.min(1,avgScreenSpeed/520);
-  const near=Math.max(0,1-Math.min(1,nearest/170));
+  const speed=Math.min(1,avgScreenSpeed/540);
+  const near=Math.max(0,1-Math.min(1,nearest/180));
 
-  // Keep this clearly BEHIND the music.
-  const level=.0005 + count*.018 + speed*.006 + near*.016;
-  setParam(threatGain.gain,Math.min(.038,level),.08);
-  setParam(threatFilter.frequency,420 + speed*950 + near*620,.10);
+  // The bed stays restrained. It should feel like pressure, not like a sound effect.
+  const rumble=.00025 + count*.0065 + speed*.0025 + near*.0045;
+  setParam(threatGain.gain,Math.min(.014,rumble),.12);
+  setParam(threatFilter.frequency,210 + speed*260 + count*120,.14);
+
+  if(threatHum&&threatHumGain){
+    setParam(threatHum.frequency,62 + speed*38 + count*18,.15);
+    setParam(threatHumGain.gain,.0002 + count*.0035 + near*.0028,.14);
+  }
 }
 
 function updateAudio(){
@@ -460,6 +481,48 @@ function whoosh(dur=.28,vol=.032){
   src.start();src.stop(ac.currentTime+dur+.02);
 }
 
+function sfxFlyby(strength=1){
+  if(!soundEnabled)return;
+  const ac=ensureAudio();
+  if(!ac)return;
+
+  const dur=.16 + Math.min(.08,strength*.03);
+  const len=Math.max(1,Math.floor(ac.sampleRate*dur));
+  const buf=ac.createBuffer(1,len,ac.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+
+  const src=ac.createBufferSource();
+  const bp=ac.createBiquadFilter();
+  const g=ac.createGain();
+
+  bp.type='bandpass';
+  bp.Q.value=.85;
+  bp.frequency.setValueAtTime(1550+strength*220,ac.currentTime);
+  bp.frequency.exponentialRampToValueAtTime(340,ac.currentTime+dur);
+
+  const vol=.010 + Math.min(.012,strength*.004);
+  g.gain.setValueAtTime(.0001,ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(vol,ac.currentTime+.018);
+  g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+dur);
+
+  src.buffer=buf;
+  src.connect(bp);bp.connect(g);g.connect(sfxBus||ac.destination);
+  src.start();src.stop(ac.currentTime+dur+.02);
+
+  // Tiny downward engine pitch gives it a rocket-like pass rather than pure wind.
+  const o=ac.createOscillator();
+  const og=ac.createGain();
+  o.type='triangle';
+  o.frequency.setValueAtTime(190+strength*20,ac.currentTime);
+  o.frequency.exponentialRampToValueAtTime(86,ac.currentTime+dur);
+  og.gain.setValueAtTime(.0001,ac.currentTime);
+  og.gain.exponentialRampToValueAtTime(.006+strength*.0015,ac.currentTime+.015);
+  og.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+dur);
+  o.connect(og);og.connect(sfxBus||ac.destination);
+  o.start();o.stop(ac.currentTime+dur+.02);
+}
+
 function sfxExplosion(power=1){
   if(!soundEnabled)return;
   noiseBurst(.05+.022*power,.014+.008*power,720);
@@ -467,7 +530,7 @@ function sfxExplosion(power=1){
 }
 function sfxNear(){
   if(!soundEnabled)return;
-  tone(800+Math.min(260,S.combo*25),.035,.011,'sine',90);
+  tone(820+Math.min(220,S.combo*22),.032,.0065,'sine',75);
 }
 function sfxHit(){
   if(!soundEnabled)return;
@@ -490,6 +553,7 @@ function fadeAudioForMenu(){
   if(!audioCtx)return;
   if(musicBus)setParam(musicBus.gain,.12,.10);
   if(threatGain)setParam(threatGain.gain,.0001,.05);
+  if(threatHumGain)setParam(threatHumGain.gain,.0001,.05);
 }
 
 function shockwave(x,y,color='#fff',power=1){
@@ -581,8 +645,8 @@ function gameOver(){
   sfxHit();sfxExplosion(1.4);
   fadeAudioForMenu();
   S.shake=14;S.deathFlash=1;
-  const best=Math.max(Math.floor(S.score),+(localStorage.getItem('rocketPanicV20Best')||0));
-  localStorage.setItem('rocketPanicV20Best',String(best));
+  const best=Math.max(Math.floor(S.score),+(localStorage.getItem('rocketPanicV21Best')||0));
+  localStorage.setItem('rocketPanicV21Best',String(best));
   fs.textContent=Math.floor(S.score).toLocaleString();
   bs.textContent=best.toLocaleString();
   ft.textContent=S.t.toFixed(1)+'s';
@@ -897,7 +961,8 @@ function pointerDown(e){
     control.primaryId=e.pointerId;
     control.lastX=e.clientX;
     control.lastY=e.clientY;
-    control.touchX=e.clientX;    control.touchY=e.clientY;
+    control.touchX=e.clientX;
+    control.touchY=e.clientY;
     canvas.setPointerCapture?.(e.pointerId);
     return;
   }
@@ -932,8 +997,7 @@ function pointerUp(e){
 
   control.active=false;
   control.primaryId=null;
-  control.moveX=0;
-  control.moveY=0;
+  control.moveX=0;  control.moveY=0;
   player.vx=0;
   player.vy=0;
 }
@@ -1217,6 +1281,7 @@ function update(dt){
       S.comboHold=1.7;
       S.score+=100*S.combo;
       floatText(player.x,player.y-23,'NEAR MISS',`hsl(${(180+S.t*90)%360} 100% 85%)`);
+      sfxFlyby(Math.min(2.2,m.speed*S.cameraScale/260));
       sfxNear();
     }
 
