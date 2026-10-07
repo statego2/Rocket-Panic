@@ -842,6 +842,8 @@ function reset(){
   player.x=W*.5;player.y=H*.42;player.vx=player.speed*.7;player.vy=0;
   player.angle=0;player.hp=3;player.trail=[];
   control.active=false;control.primaryId=null;control.moveX=0;control.moveY=0;control.desiredAngle=0;
+  musicTension=0;
+  audioStage=-1;
   hud();
 }
 
@@ -1321,6 +1323,14 @@ function update(dt){
     S.bullets.length=0;
     shockwave(player.x,player.y,'#73f8ff',1.55);
     sfxBreakout(S.zoomStage);
+
+    // Re-enter on a clean downbeat after every BREAKOUT.
+    // Existing look-ahead notes finish naturally; the new FIELD begins as a composed drop.
+    if(audioCtx&&soundEnabled){
+      audioStep=Math.ceil(audioStep/16)*16;
+      audioNextStep=audioCtx.currentTime+.13;
+      audioStage=S.zoomStage;
+    }
 
     S.whiteFlash=Math.max(S.whiteFlash,.16);
     S.shake=Math.max(S.shake,4.5);
