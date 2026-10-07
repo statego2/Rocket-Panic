@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Rocket Panic">
 <link rel="manifest" href="manifest.webmanifest">
-<title>ROCKET PANIC V18</title>
+<title>ROCKET PANIC V19</title>
 <style>
 :root{
   --cyan:#43f5ff;
@@ -108,12 +108,12 @@ button{
 <div id="overlay">
   <div class="panel">
     <h1>ROCKET PANIC</h1>
-    <div class="sub">GAME FEEL + SAFE BREAKOUT</div>
+    <div class="sub">NEON SOUNDTRACK + DEEP SPACE</div>
     <div class="desc">
-      Τα BREAKOUTS πλέον είναι <b>safe transitions</b>: το neon κύμα σε προστατεύει στιγμιαία και σπρώχνει τους κοντινούς πυραύλους προς τα έξω όσο ανοίγει η κάμερα.<br>
-      Πρόσθεσα βασικό <b>sound design + impact feedback</b> για near misses, explosions, shield regen και αλλαγή field.<br>
-      Ο ήχος ξεκινά <b>OFF</b> ώστε να μην κόβει τη μουσική/radio του iPhone — τον ανοίγεις μόνο όταν τον θέλεις.<br><br>
-      Δεύτερο δάχτυλο → DASH. Ασπίδες με regen.
+      Το run έχει πλέον δικό του <b>procedural neon soundtrack</b> που γίνεται πιο έντονο όσο ανεβαίνεις.<br>
+      Το swarm έχει συλλογικό <b>missile roar / engine whine</b> που δυναμώνει με αριθμό, ταχύτητα και εγγύτητα πυραύλων χωρίς να γίνεται θόρυβος.<br>
+      Τα BREAKOUTS έχουν νέο βαθύτερο whoosh/impact αντί για το παλιό chime, και στο deep space ο ουρανός σκοτεινιάζει, τα αστέρια δυναμώνουν και οι πύραυλοι λάμπουν περισσότερο.<br><br>
+      SOUND ξεκινά ON αλλά μπορείς να το κλείσεις. Δεύτερο δάχτυλο → DASH.
     </div>
     <div id="stats" class="stats" style="display:none">
       <div class="card"><b id="fs">0</b><span>SCORE</span></div>
@@ -122,7 +122,7 @@ button{
       <div class="card"><b id="fn">0</b><span>NEAR MISSES</span></div>
     </div>
     <button id="start">LAUNCH</button>
-    <button id="soundToggle">SOUND: OFF</button>
+    <button id="soundToggle">SOUND: ON</button>
   </div>
 </div>
 
@@ -192,8 +192,107 @@ const control={
 };
 
 
-let soundEnabled=false;
+let soundEnabled=true;
 let audioCtx=null;
+let audioMaster=null,sfxBus=null,musicBus=null,musicFilter=null;
+let bassOsc=null,padOsc=null,airOsc=null,pulseOsc=null,pulseLfo=null,pulseLfoGain=null,pulseGain=null;
+let threatNoise=null,threatFilter=null,threatNoiseGain=null,threatOsc=null,threatOscGain=null;
+
+function initAudioSystem(){
+  if(!audioCtx || audioMaster)return;
+  const ac=audioCtx;
+
+  audioMaster=ac.createGain();
+  audioMaster.gain.value=.82;
+  audioMaster.connect(ac.destination);
+
+  sfxBus=ac.createGain();
+  sfxBus.gain.value=.72;
+  sfxBus.connect(audioMaster);
+
+  musicBus=ac.createGain();
+  musicBus.gain.value=.0001;
+  musicFilter=ac.createBiquadFilter();
+  musicFilter.type='lowpass';
+  musicFilter.frequency.value=650;
+  musicFilter.Q.value=.65;
+  musicBus.connect(musicFilter);
+  musicFilter.connect(audioMaster);
+
+  bassOsc=ac.createOscillator();
+  bassOsc.type='sine';
+  bassOsc.frequency.value=55;
+  const bassGain=ac.createGain();
+  bassGain.gain.value=.34;
+  bassOsc.connect(bassGain);bassGain.connect(musicBus);
+  bassOsc.start();
+
+  padOsc=ac.createOscillator();
+  padOsc.type='triangle';
+  padOsc.frequency.value=110;
+  const padGain=ac.createGain();
+  padGain.gain.value=.15;
+  padOsc.connect(padGain);padGain.connect(musicBus);
+  padOsc.start();
+
+  airOsc=ac.createOscillator();
+  airOsc.type='sine';
+  airOsc.frequency.value=165;
+  airOsc.detune.value=7;
+  const airGain=ac.createGain();
+  airGain.gain.value=.075;
+  airOsc.connect(airGain);airGain.connect(musicBus);
+  airOsc.start();
+
+  pulseOsc=ac.createOscillator();
+  pulseOsc.type='triangle';
+  pulseOsc.frequency.value=220;
+  pulseGain=ac.createGain();
+  pulseGain.gain.value=.010;
+  pulseOsc.connect(pulseGain);pulseGain.connect(musicBus);
+  pulseOsc.start();
+
+  pulseLfo=ac.createOscillator();
+  pulseLfo.type='sine';
+  pulseLfo.frequency.value=1.1;
+  pulseLfoGain=ac.createGain();
+  pulseLfoGain.gain.value=.008;
+  pulseLfo.connect(pulseLfoGain);
+  pulseLfoGain.connect(pulseGain.gain);
+  pulseLfo.start();
+
+  const len=ac.sampleRate*2;
+  const buf=ac.createBuffer(1,len,ac.sampleRate);
+  const data=buf.getChannelData(0);
+  for(let i=0;i<len;i++)data[i]=Math.random()*2-1;
+
+  threatNoise=ac.createBufferSource();
+  threatNoise.buffer=buf;
+  threatNoise.loop=true;
+  threatFilter=ac.createBiquadFilter();
+  threatFilter.type='bandpass';
+  threatFilter.frequency.value=650;
+  threatFilter.Q.value=.62;
+  threatNoiseGain=ac.createGain();
+  threatNoiseGain.gain.value=.0001;
+  threatNoise.connect(threatFilter);
+  threatFilter.connect(threatNoiseGain);
+  threatNoiseGain.connect(audioMaster);
+  threatNoise.start();
+
+  threatOsc=ac.createOscillator();
+  threatOsc.type='sawtooth';
+  threatOsc.frequency.value=58;
+  const lowpass=ac.createBiquadFilter();
+  lowpass.type='lowpass';
+  lowpass.frequency.value=260;
+  threatOscGain=ac.createGain();
+  threatOscGain.gain.value=.0001;
+  threatOsc.connect(lowpass);
+  lowpass.connect(threatOscGain);
+  threatOscGain.connect(audioMaster);
+  threatOsc.start();
+}
 
 function ensureAudio(){
   if(!soundEnabled)return null;
@@ -201,9 +300,61 @@ function ensureAudio(){
     const AC=window.AudioContext||window.webkitAudioContext;
     if(!AC)return null;
     audioCtx=new AC();
+    initAudioSystem();
   }
   if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
+  if(audioMaster)audioMaster.gain.setTargetAtTime(.82,audioCtx.currentTime,.05);
   return audioCtx;
+}
+
+function audioTarget(param,value,time=.12){
+  if(!audioCtx||!param)return;
+  param.setTargetAtTime(value,audioCtx.currentTime,time);
+}
+
+function updateAudio(){
+  if(!soundEnabled||!audioCtx||!audioMaster||!S.running)return;
+
+  const stage=S.zoomStage;
+  const deep=Math.min(1,S.t/210);
+  const roots=[55,58.27,65.41,73.42,82.41];
+  const root=roots[stage];
+
+  audioTarget(bassOsc.frequency,root,.30);
+  audioTarget(padOsc.frequency,root*2,.32);
+  audioTarget(airOsc.frequency,root*3,.35);
+  audioTarget(pulseOsc.frequency,root*4,.28);
+
+  const musicLevel=.038 + stage*.012 + deep*.018;
+  audioTarget(musicBus.gain,musicLevel,.28);
+  audioTarget(musicFilter.frequency,540 + stage*310 + deep*520,.30);
+  audioTarget(pulseLfo.frequency,1.05 + stage*.34 + deep*.42,.25);
+  if(pulseLfoGain)audioTarget(pulseLfoGain.gain,.0055 + stage*.0016 + deep*.0025,.25);
+
+  const countNorm=Math.min(1,S.missiles.length/46);
+  const d=difficulty();
+  const speedNorm=Math.min(1,Math.max(0,(d.speed-155)/310));
+
+  let nearest=99999;
+  const step=Math.max(1,Math.floor(S.missiles.length/12));
+  for(let i=0;i<S.missiles.length;i+=step){
+    const m=S.missiles[i];
+    nearest=Math.min(nearest,Math.hypot(m.x-player.x,m.y-player.y)*S.cameraScale);
+  }
+  const closeNorm=Math.max(0,1-Math.min(1,nearest/190));
+
+  const threat=.0025 + countNorm*.030 + speedNorm*.013 + closeNorm*.022;
+  audioTarget(threatNoiseGain.gain,Math.min(.066,threat),.10);
+  audioTarget(threatFilter.frequency,520 + speedNorm*1250 + stage*135 + closeNorm*500,.12);
+  audioTarget(threatOsc.frequency,54 + speedNorm*70 + countNorm*32,.14);
+  audioTarget(threatOscGain.gain,.0015 + countNorm*.010 + closeNorm*.010,.12);
+}
+
+function fadeAudioForMenu(){
+  if(!audioCtx)return;
+  if(musicBus)audioTarget(musicBus.gain,.012,.18);
+  if(threatNoiseGain)audioTarget(threatNoiseGain.gain,.0001,.10);
+  if(threatOscGain)audioTarget(threatOscGain.gain,.0001,.10);
 }
 
 function tone(freq=440,dur=.08,vol=.035,type='sine',slide=0){
@@ -218,11 +369,11 @@ function tone(freq=440,dur=.08,vol=.035,type='sine',slide=0){
   gain.gain.setValueAtTime(.0001,now);
   gain.gain.exponentialRampToValueAtTime(Math.max(.0002,vol),now+.008);
   gain.gain.exponentialRampToValueAtTime(.0001,now+dur);
-  osc.connect(gain);gain.connect(ac.destination);
+  osc.connect(gain);gain.connect(sfxBus||ac.destination);
   osc.start(now);osc.stop(now+dur+.02);
 }
 
-function noiseBurst(dur=.07,vol=.025){
+function noiseBurst(dur=.07,vol=.025,center=850){
   const ac=ensureAudio();
   if(!ac)return;
   const len=Math.max(1,Math.floor(ac.sampleRate*dur));
@@ -232,39 +383,59 @@ function noiseBurst(dur=.07,vol=.025){
   const src=ac.createBufferSource();
   const gain=ac.createGain();
   const filter=ac.createBiquadFilter();
-  filter.type='bandpass';filter.frequency.value=850;filter.Q.value=.7;
+  filter.type='bandpass';filter.frequency.value=center;filter.Q.value=.7;
   src.buffer=buf;
   gain.gain.setValueAtTime(vol,ac.currentTime);
   gain.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+dur);
-  src.connect(filter);filter.connect(gain);gain.connect(ac.destination);
+  src.connect(filter);filter.connect(gain);gain.connect(sfxBus||ac.destination);
   src.start();src.stop(ac.currentTime+dur+.01);
+}
+
+function whoosh(dur=.34,vol=.035){
+  const ac=ensureAudio();
+  if(!ac)return;
+  const len=Math.max(1,Math.floor(ac.sampleRate*dur));
+  const buf=ac.createBuffer(1,len,ac.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+  const src=ac.createBufferSource();
+  const filter=ac.createBiquadFilter();
+  const gain=ac.createGain();
+  filter.type='lowpass';
+  filter.frequency.setValueAtTime(2600,ac.currentTime);
+  filter.frequency.exponentialRampToValueAtTime(260,ac.currentTime+dur);
+  gain.gain.setValueAtTime(.0001,ac.currentTime);
+  gain.gain.exponentialRampToValueAtTime(vol,ac.currentTime+.045);
+  gain.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+dur);
+  src.buffer=buf;
+  src.connect(filter);filter.connect(gain);gain.connect(sfxBus||ac.destination);
+  src.start();src.stop(ac.currentTime+dur+.02);
 }
 
 function sfxExplosion(power=1){
   if(!soundEnabled)return;
-  noiseBurst(.055+.025*power,.018+.010*power);
-  tone(150,.075,.018*power,'triangle',-65);
+  noiseBurst(.055+.025*power,.016+.009*power,760);
+  tone(145,.075,.016*power,'triangle',-60);
 }
 function sfxNear(){
   if(!soundEnabled)return;
-  tone(760+Math.min(260,S.combo*34),.045,.020,'sine',120);
+  tone(720+Math.min(240,S.combo*30),.042,.016,'sine',105);
 }
 function sfxHit(){
   if(!soundEnabled)return;
-  tone(92,.13,.045,'sawtooth',-25);
-  noiseBurst(.08,.025);
+  tone(88,.14,.040,'sawtooth',-24);
+  noiseBurst(.08,.022,420);
 }
 function sfxShield(){
   if(!soundEnabled)return;
-  tone(520,.11,.022,'sine',260);
-  setTimeout(()=>tone(780,.12,.018,'sine',220),55);
+  tone(480,.12,.018,'sine',190);
+  setTimeout(()=>tone(700,.13,.014,'sine',160),60);
 }
 function sfxBreakout(stage){
   if(!soundEnabled)return;
-  const root=260+stage*45;
-  tone(root,.16,.030,'triangle',180);
-  setTimeout(()=>tone(root*1.35,.20,.027,'sine',260),75);
-  setTimeout(()=>tone(root*1.78,.24,.022,'sine',330),145);
+  whoosh(.42,.040);
+  tone(74+stage*5,.34,.045,'sine',-24);
+  setTimeout(()=>tone(145+stage*14,.28,.014,'triangle',42),115);
 }
 
 function shockwave(x,y,color='#fff',power=1){
@@ -276,7 +447,9 @@ soundToggleEl.addEventListener('click',()=>{
   soundToggleEl.textContent='SOUND: '+(soundEnabled?'ON':'OFF');
   if(soundEnabled){
     ensureAudio();
-    tone(520,.07,.018,'sine',120);
+    tone(420,.06,.012,'sine',80);
+  }else if(audioCtx&&audioMaster){
+    audioMaster.gain.setTargetAtTime(.0001,audioCtx.currentTime,.05);
   }
 });
 
@@ -329,6 +502,7 @@ function reset(){
 function start(){
   if(soundEnabled)ensureAudio();
   reset();S.running=true;
+  if(audioCtx&&musicBus)musicBus.gain.setTargetAtTime(.038,audioCtx.currentTime,.18);
   overlay.style.display='none';
 }
 
@@ -338,9 +512,10 @@ function gameOver(){
   burst(player.x,player.y,34,'#77fbff',1.8);
   shockwave(player.x,player.y,'#77fbff',1.25);
   sfxHit();sfxExplosion(1.4);
+  fadeAudioForMenu();
   S.shake=14;S.deathFlash=1;
-  const best=Math.max(Math.floor(S.score),+(localStorage.getItem('rocketPanicV18Best')||0));
-  localStorage.setItem('rocketPanicV18Best',String(best));
+  const best=Math.max(Math.floor(S.score),+(localStorage.getItem('rocketPanicV19Best')||0));
+  localStorage.setItem('rocketPanicV19Best',String(best));
   fs.textContent=Math.floor(S.score).toLocaleString();
   bs.textContent=best.toLocaleString();
   ft.textContent=S.t.toFixed(1)+'s';
@@ -868,6 +1043,7 @@ function update(dt){
 
 
   const d=difficulty();
+  updateAudio();
   S.spawnBank+=dt*d.rate;
   while(S.spawnBank>=1&&S.missiles.length<d.cap){
     S.spawnBank-=1;
@@ -1156,7 +1332,7 @@ function drawRocket(x,y,a,scale,color,isPlayer=false){
   const rear=-L*.44;
   const nose=L*.56;
 
-  ctx.shadowBlur=isPlayer?18:11;
+  ctx.shadowBlur=isPlayer?18:(S.zoomStage>=4?26:(S.zoomStage>=3?19:11));
   ctx.shadowColor=color;
 
   ctx.fillStyle=color;
@@ -1185,7 +1361,7 @@ function drawRocket(x,y,a,scale,color,isPlayer=false){
   ctx.closePath();
   ctx.fill();
 
-  ctx.shadowBlur=5;
+  ctx.shadowBlur=isPlayer?5:(S.zoomStage>=4?12:6);
   ctx.shadowColor=color;
   ctx.fillStyle='#efffff';
   ctx.beginPath();
@@ -1230,25 +1406,27 @@ function background(){
   const z=S.cameraScale;
 
   // Deep neon sky that always belongs to the same game world.
+  const deepSpace=smoothstep(.66,1.0,a);
   const sky=ctx.createLinearGradient(0,0,0,H);
-  sky.addColorStop(0,'#06081d');
-  sky.addColorStop(.50,a<.74?'#0a1330':'#080b22');
-  sky.addColorStop(1,a<.38?'#10193b':'#070a18');
+  sky.addColorStop(0,deepSpace>.65?'#010207':'#06081d');
+  sky.addColorStop(.50,deepSpace>.65?'#02040c':(a<.74?'#0a1330':'#080b22'));
+  sky.addColorStop(1,deepSpace>.65?'#04050d':(a<.38?'#10193b':'#070a18'));
   ctx.fillStyle=sky;
   ctx.fillRect(0,0,W,H);
 
   // Subtle geometric arena language, always present.
   const tile=98 + a*46;
   const drift=(t*2.0)%tile;
+  const geoFade=1-.72*deepSpace;
   for(let iy=-1;iy<Math.ceil(H/tile)+1;iy++){
     for(let ix=-1;ix<Math.ceil(W/tile)+1;ix++){
       const x=ix*tile-drift*.14;
       const y=iy*tile;
       const odd=(ix+iy)&1;
-      ctx.fillStyle=odd?'rgba(65,34,109,.070)':'rgba(20,49,95,.060)';
+      ctx.fillStyle=odd?('rgba(65,34,109,'+(.070*geoFade)+')'):('rgba(20,49,95,'+(.060*geoFade)+')');
       ctx.fillRect(x,y,tile,tile);
       if((ix+iy)%3===0){
-        ctx.fillStyle='rgba(44,33,96,.038)';
+        ctx.fillStyle='rgba(44,33,96,'+(.038*geoFade)+')';
         ctx.beginPath();
         ctx.moveTo(x,y);
         ctx.lineTo(x+tile,y);
@@ -1262,8 +1440,8 @@ function background(){
   // Warm beacon glow.
   const sunX=W*.78, sunY=H*(.24-.03*a);
   const sun=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,Math.max(W,H)*.28);
-  sun.addColorStop(0,`rgba(255,165,80,${.08-.03*a})`);
-  sun.addColorStop(.24,`rgba(255,79,200,${.035-.012*a})`);
+  sun.addColorStop(0,'rgba(255,165,80,'+((.08-.03*a)*(1-.72*deepSpace))+')');
+  sun.addColorStop(.24,'rgba(255,79,200,'+((.035-.012*a)*(1-.68*deepSpace))+')');
   sun.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle=sun;
   ctx.fillRect(0,0,W,H);
@@ -1334,15 +1512,17 @@ function background(){
     ctx.restore();
   }
 
-  // Stars appear gradually.
-  const starA=smoothstep(.34,.84,a);
+  // Stars become a real backdrop in the last fields.
+  const starA=smoothstep(.30,.78,a);
   if(starA>0){
-    for(let i=0;i<34;i++){
-      const x=(i*83.37 + (i%5)*17)%W;
-      const y=(i*149.11 + (i%4)*23)%Math.max(1,H*.72);
-      const tw=.20+.16*Math.sin(t*.9+i*.9);
-      const size=i%8===0?1.6:1;
-      ctx.fillStyle=`rgba(225,243,255,${starA*(.12+tw)})`;
+    const starCount=34 + S.zoomStage*10;
+    for(let i=0;i<starCount;i++){
+      const x=(i*83.37 + (i%5)*17 + (i%3)*31)%W;
+      const y=(i*149.11 + (i%4)*23 + (i%7)*11)%Math.max(1,H*.78);
+      const tw=.20+.18*Math.sin(t*.9+i*.9);
+      const size=i%11===0?1.8:(i%5===0?1.25:1);
+      const lateBoost=.11+deepSpace*.18;
+      ctx.fillStyle='rgba(232,246,255,'+(starA*(lateBoost+tw))+')';
       ctx.fillRect(x,y,size,size);
     }
   }
@@ -1488,8 +1668,10 @@ function draw(){
   }
 
   for(const m of S.missiles){
-    const w=((m.type==='dart'||m.type==='lance') ? 1.0 : (m.type==='hook' ? 1.45 : 1.28));
-    const aa=(m.type==='interceptor' ? .76 : .66);
+    const lateGlow=1 + S.zoomStage*.10;
+    const w=((m.type==='dart'||m.type==='lance') ? 1.0 : (m.type==='hook' ? 1.45 : 1.28))*lateGlow;
+    const baseA=(m.type==='interceptor' ? .76 : .66);
+    const aa=Math.min(.96,baseA + S.zoomStage*.055);
     ribbon(m.trail,m.color,w,aa);
   }
 
