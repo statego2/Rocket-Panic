@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Rocket Panic">
-<title>ROCKET PANIC V21</title>
+<title>ROCKET PANIC V22</title>
 <style>
 :root{
   --cyan:#43f5ff;
@@ -107,7 +107,7 @@ button{
 <div id="overlay">
   <div class="panel">
     <h1>ROCKET PANIC</h1>
-    <div class="sub">MISSILE AUDIO REWORK</div>
+    <div class="sub">CONTROL FIX</div>
     <div class="desc">
       Το soundtrack μένει όπως είναι, αλλά το <b>missile audio ξαναχτίστηκε</b>.<br>
       Έφυγε το περίεργο constant hiss. Το swarm πλέον δίνει χαμηλό engine/air rumble όταν πυκνώνει, ενώ οι κοντινοί πύραυλοι κάνουν σύντομο <b>flyby whoosh</b> όταν περνούν ξυστά.<br>
@@ -645,8 +645,8 @@ function gameOver(){
   sfxHit();sfxExplosion(1.4);
   fadeAudioForMenu();
   S.shake=14;S.deathFlash=1;
-  const best=Math.max(Math.floor(S.score),+(localStorage.getItem('rocketPanicV21Best')||0));
-  localStorage.setItem('rocketPanicV21Best',String(best));
+  const best=Math.max(Math.floor(S.score),+(localStorage.getItem('rocketPanicV22Best')||0));
+  localStorage.setItem('rocketPanicV22Best',String(best));
   fs.textContent=Math.floor(S.score).toLocaleString();
   bs.textContent=best.toLocaleString();
   ft.textContent=S.t.toFixed(1)+'s';
@@ -898,7 +898,6 @@ function burst(x,y,n,color,power=1){
 function floatText(x,y,text,color='#fff'){
   S.particles.push({text,x,y,vy:-30,life:.5,max:.5,color});
 }
-
 // RELATIVE TOUCH CONTROL
 // ----------------------
 // The ship moves by the SAME relative displacement as the primary finger.
@@ -916,9 +915,10 @@ function applyRelativeMove(dx,dy){
   // small movements stay precise, faster swipes get a little extra gain.
   const fingerSpeed=Math.hypot(dx,dy);
   const dynamicGain=control.sensitivity + Math.min(0.16,fingerSpeed*0.012);
-  // Keep the exact same on-screen sensitivity at every zoom level.
-  const mx=dx*dynamicGain/Math.max(.68,S.cameraScale);
-  const my=dy*dynamicGain/Math.max(.68,S.cameraScale);
+  // Preserve the exact same *screen-space* sensitivity at every zoom.
+  // FIELD V is 0.28x, so world displacement must scale by 1/cameraScale.
+  const mx=dx*dynamicGain/Math.max(.28,S.cameraScale);
+  const my=dy*dynamicGain/Math.max(.28,S.cameraScale);
 
   const oldX=player.x, oldY=player.y;
 
@@ -997,7 +997,8 @@ function pointerUp(e){
 
   control.active=false;
   control.primaryId=null;
-  control.moveX=0;  control.moveY=0;
+  control.moveX=0;
+  control.moveY=0;
   player.vx=0;
   player.vy=0;
 }
@@ -1025,7 +1026,7 @@ function dash(){
     dx/=mag;dy/=mag;
   }
 
-  const distance=68/Math.max(.68,S.cameraScale);
+  const distance=68/Math.max(.28,S.cameraScale);
   const oldX=player.x,oldY=player.y;
 
   const b=worldBounds();
@@ -1307,7 +1308,7 @@ function update(dt){
     }
 
     const b=worldBounds();
-    const q=205/Math.max(.68,S.cameraScale);
+    const q=205/Math.max(.28,S.cameraScale);
     if(m.age>m.maxAge){
       m.dead=true;
       burst(m.x,m.y,8,m.color,.48);
@@ -1896,34 +1897,3 @@ function draw(){
     ctx.fillRect(0,0,W,H);
   }
   if(S.deathFlash>0){
-    ctx.fillStyle=`rgba(255,255,255,${S.deathFlash*.10})`;
-    ctx.fillRect(0,0,W,H);
-  }
-  if(S.whiteFlash>0){
-    ctx.fillStyle=`rgba(90,248,255,${S.whiteFlash*.06})`;
-    ctx.fillRect(0,0,W,H);
-  }
-
-  ctx.restore();
-}
-
-function loop(now){
-  const dt=Math.min(.033,(now-last)/1000);
-  last=now;
-  try{
-    update(dt);
-    draw();
-  }catch(err){
-    // Keep the animation loop alive even if a single frame hits an unexpected edge case.
-    console.error('ROCKET PANIC frame error:',err);
-  }
-  requestAnimationFrame(loop);
-}
-
-resize();
-reset();
-requestAnimationFrame(loop);
-})();
-</script>
-</body>
-</html>
