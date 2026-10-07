@@ -650,6 +650,7 @@ let threatNoise=null,threatFilter=null,threatGain=null,threatHum=null,threatHumG
 let engineBus=null,engineNoise=null,engineNoiseFilter=null,engineNoiseGain=null,engineTone=null,engineToneGain=null;
 let audioNextStep=0,audioStep=0,audioStage=-1;
 let musicTension=0;
+let epicExplosionLastBloom=-99,epicExplosionCounter=0;
 
 // -----------------------------------------------------------------------------
 // ROCKET PANIC — ADAPTIVE ORIGINAL SCORE
@@ -1258,15 +1259,85 @@ function sfxFlyby(strength=1){
   noiseBurst(.035,.0048+s*.0012,5200,true,2500,.012,-pan*.55,false,.7,.0015);
 }
 
-function sfxExplosion(power=1){
+function sfxExplosion(power=1,worldX=null,stageOverride=null){
   if(!soundEnabled)return;
+  const ac=ensureAudio();
+  if(!ac)return;
+
   const p=Math.max(.55,Math.min(1.8,power));
-  const v=.93+Math.random()*.14;
-  const pan=(Math.random()*2-1)*.18;
-  noiseBurst(.035,.013*p,4300,true,1650,0,pan,false,.48,.001);
-  noiseBurst(.19+.035*p,.016*p,980*v,false,165,.006,pan*.4,true,.56,.002);
-  tone(94*v,.24+.035*p,.020*p,'sine',-56,.003,.002,pan*.25);
-  tone(188*v,.085,.0065*p,'triangle',-72,.008,.001,-pan*.35);
+  const stage=stageOverride==null ? S.zoomStage : stageOverride;
+
+  // Stages I-IV keep the established punchy explosion.
+  if(stage<4){
+    const v=.93+Math.random()*.14;
+    const pan=(Math.random()*2-1)*.18;
+    noiseBurst(.035,.013*p,4300,true,1650,0,pan,false,.48,.001);
+    noiseBurst(.19+.035*p,.016*p,980*v,false,165,.006,pan*.4,true,.56,.002);
+    tone(94*v,.24+.035*p,.020*p,'sine',-56,.003,.002,pan*.25);
+    tone(188*v,.085,.0065*p,'triangle',-72,.008,.001,-pan*.35);
+    return;
+  }
+
+  // FIELD V: "ORBITAL BLOOM"
+  // Physical core + chord-aware resonant tail. The explosion becomes punctuation
+  // inside the existing score instead of a separate arcade sound pasted on top.
+  const pan=worldX==null
+    ? (Math.random()*2-1)*.38
+    : Math.max(-.62,Math.min(.62,((worldX-W*.5)/(W*.5))*.58));
+
+  const variation=.96+Math.random()*.08;
+
+  // 1) Micro-crack: gives the collision a crisp point without harshness.
+  noiseBurst(.028,.0095*p,5600,true,2100,0,pan,false,.42,.0008);
+
+  // 2) Deep orbital body: slower, rounder and wider than earlier-stage explosions.
+  noiseBurst(.27+.035*p,.0135*p,820*variation,false,112,.004,pan*.38,true,.50,.0025);
+  tone(82*variation,.31+.045*p,.0185*p,'sine',-43,.002,.002,pan*.18);
+
+  // 3) Warm metallic "bloom": tuned to the chord that the soundtrack is already on.
+  // audioStep is slightly look-ahead scheduled, which is fine: we want the current
+  // musical neighbourhood rather than sample-accurate beat quantisation.
+  const bar=Math.floor(Math.max(0,audioStep-1)/16);
+  const chord=MUSIC_HARMONY[bar%MUSIC_HARMONY.length];
+  const chordRoot=noteFreq(MUSIC_ROOT,chord.shift);
+  const toneIndex=epicExplosionCounter++%chord.quality.length;
+  const sem=chord.quality[toneIndex];
+  const bloomFreq=noteFreq(chordRoot*2,sem);
+
+  // Every collision gets a short tonal signature.
+  musicVoice(bloomFreq,ac.currentTime+.022,.24+.035*p,.0068*p,'triangle',1850,{
+    attack:.007,release:.15,reverb:.42,
+    detune:-4,pan:pan*.70
+  });
+  musicVoice(bloomFreq*2,ac.currentTime+.038,.19+.025*p,.0032*p,'sine',3300,{
+    attack:.018,release:.14,reverb:.50,
+    detune:5,pan:-pan*.42
+  });
+
+  // 4) The large "beautiful" tail is rate-limited. FIELD V may create many
+  // missile collisions; allowing every one to ring would smear the soundtrack.
+  const now=ac.currentTime;
+  const canBloom=(now-epicExplosionLastBloom)>.115;
+  if(canBloom){
+    epicExplosionLastBloom=now;
+
+    const fifth=noteFreq(chordRoot*2,7);
+    musicVoice(fifth,now+.070,.52+.08*p,.0048*p,'sine',2400,{
+      attack:.040,release:.31,reverb:.60,
+      detune:-6,pan:-pan*.78
+    });
+    musicVoice(fifth*2,now+.095,.43+.06*p,.0028*p,'sine',3900,{
+      attack:.055,release:.29,reverb:.66,
+      detune:6,pan:pan*.82
+    });
+
+    // Tiny upward glitter, deliberately quiet: reads as starlight around the impact.
+    const sparkle=noteFreq(chordRoot*4,chord.quality[(toneIndex+1)%chord.quality.length]);
+    musicVoice(sparkle,now+.115,.24,.0019*p,'sine',5200,{
+      attack:.020,release:.18,reverb:.72,
+      pan:-pan
+    });
+  }
 }
 
 function sfxNear(){
@@ -1497,7 +1568,7 @@ function deathMissileVsMissile(){
         burst(x,y,S.deathStage>=4?18:13,'#ff78d8',S.deathStage>=4?1.18:1.0);
         shockwave(x,y,'#ff78d8',S.deathStage>=4?.90:.68);
         explosionBloom(x,y,'#ff78d8',S.deathStage>=4?.92:.66);
-        if(soundEnabled)sfxExplosion(.45);
+        if(soundEnabled)sfxExplosion(.45,x,S.deathStage);
       }
     }
   }
@@ -2122,7 +2193,7 @@ function missileVsMissile(){
         burst(x,y,S.zoomStage>=4?19:14,'#ff78d8',S.zoomStage>=4?1.24:1.1);
         shockwave(x,y,'#ff78d8',S.zoomStage>=4?.95:.75);
         explosionBloom(x,y,'#ff78d8',S.zoomStage>=4?1.0:.70);
-        sfxExplosion(.8);
+        sfxExplosion(.8,x,S.zoomStage);
         S.score+=155*S.combo;
         S.combo=Math.min(9,S.combo+.3);
         S.comboHold=1.65;
@@ -2358,7 +2429,7 @@ function update(dt){
       burst(m.x,m.y,S.zoomStage>=4?22:16,m.color,S.zoomStage>=4?1.22:1.05);
       shockwave(m.x,m.y,m.color,S.zoomStage>=4?1.10:.9);
       explosionBloom(m.x,m.y,m.color,S.zoomStage>=4?1.12:.82);
-      sfxExplosion(1);
+      sfxExplosion(1,m.x,S.zoomStage);
       S.shake=S.zoomStage>=4?10:8;
 
       if(S.dashT>0){
