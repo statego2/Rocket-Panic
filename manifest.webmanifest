@@ -1,0 +1,9 @@
+{
+  "name": "Rocket Panic",
+  "short_name": "Rocket Panic",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#080a22",
+  "theme_color": "#080a22",
+  "orientation": "portrait-primary"
+}
