@@ -89,6 +89,14 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-acti
   background:linear-gradient(90deg,#67f5ff 0%,#b58cff 52%,#ff70d7 100%);
   box-shadow:0 0 24px rgba(96,238,255,.14);
 }
+#app.prelaunch #hud,#app.prelaunch #centerHud,#app.prelaunch #hint{
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+}
+#hud,#centerHud,#hint{
+  transition:opacity .42s ease,visibility .42s ease;
+}
 #app.death #hud,#app.death #centerHud,#app.death #hint{
   opacity:0;
   transition:opacity .55s ease;
@@ -564,7 +572,7 @@ button{
 </style>
 </head>
 <body>
-<div id="app" class="intro-running">
+<div id="app" class="intro-running prelaunch">
 
 <div id="intro" aria-hidden="true">
   <div class="intro-poster"></div>
@@ -930,13 +938,29 @@ function drawIntro(now){
 function finishIntro(){
   if(introFinished)return;
   introFinished=true;
+  menuMusicActive=true;
   intro.classList.add('is-exiting');
+
+  if(soundEnabled){
+    const ac=ensureAudio();
+    if(ac&&ac.state==='running'){
+      audioUnlocked=true;
+      musicTension=0;
+      audioStage=0;
+      audioStep=0;
+      audioNextStep=ac.currentTime+.08;
+      if(musicBus)setParam(musicBus.gain,.36,.22);
+    }
+  }
+
   setTimeout(()=>app.classList.remove('intro-running'),120);
   setTimeout(()=>{intro.style.display='none'},620);
 }
 
 intro.addEventListener('pointerdown',()=>{
-  if((performance.now()-introStartedAt)>650)finishIntro();
+  const alreadyAudible=audioUnlocked||(audioCtx&&audioCtx.state==='running');
+  unlockExperienceAudio();
+  if(alreadyAudible&&(performance.now()-introStartedAt)>650)finishIntro();
 },{passive:true});
 
 const canvas=document.getElementById('game');
@@ -1018,6 +1042,9 @@ const control={
 
 
 let soundEnabled=true;
+let menuMusicActive=false;
+let introSoundPlayed=false;
+let audioUnlocked=false;
 let audioCtx=null;
 let audioMaster=null,musicBus=null,sfxBus=null,threatBus=null;
 let masterLimiter=null,musicComp=null,musicVerb=null,musicVerbGain=null,sfxComp=null;
@@ -1371,9 +1398,10 @@ function themeNote(chordRoot,chordIndex,slot,start,dur,stage,echo=false){
 }
 
 function scheduleMusic(){
-  if(!soundEnabled||!audioCtx||!S.running)return;
+  const landingMode=!S.running&&menuMusicActive&&introFinished&&!S.deathMode;
+  if(!soundEnabled||!audioCtx||(!S.running&&!landingMode))return;
 
-  const stage=S.zoomStage;
+  const stage=landingMode?0:S.zoomStage;
   const flow=clamp(S.flow||0,0,1);
   if(audioStage!==stage)audioStage=stage;
 
@@ -1570,9 +1598,9 @@ function updateThreatAudio(){
 }
 
 function updateAudio(){
-  if(!soundEnabled||!audioCtx||!S.running)return;
-  updateThreatAudio();
-  scheduleMusic();
+  if(!soundEnabled||!audioCtx)return;
+  if(S.running)updateThreatAudio();
+  if(S.running||menuMusicActive)scheduleMusic();
 }
 
 function sfxOut(node,pan=0){
@@ -1652,6 +1680,63 @@ function sfxLaunch(){
   whoosh(.31,.020,true,0,.018);
   tone(112*v,.28,.019,'triangle',235,.018,.010,0);
   tone(224*v,.16,.0065,'sine',180,.055,.008,0);
+}
+
+
+function sfxIntroCinematic(){
+  if(!soundEnabled||introSoundPlayed)return;
+  const ac=ensureAudio();
+  if(!ac||ac.state!=='running')return;
+  introSoundPlayed=true;
+
+  const now=ac.currentTime+.025;
+
+  // Deep-space bed: the same A-minor identity as the game, heard from far away.
+  musicVoice(55,now,2.72,.0088,'sine',230,{
+    attack:.42,release:.72,reverb:.32,pan:-.08
+  });
+  musicVoice(110,now+.08,2.48,.0048,'triangle',640,{
+    attack:.55,release:.65,reverb:.46,detune:4,pan:.14
+  });
+  musicVoice(164.81,now+.18,2.10,.0032,'sine',980,{
+    attack:.48,release:.58,reverb:.52,detune:-5,pan:.28
+  });
+
+  // Crossing rockets: wide but restrained, matching the FIELD V visual palette.
+  whoosh(.62,.0125,true,-.42,.12);
+  whoosh(.48,.0145,false,.38,.72);
+  whoosh(.56,.0120,true,.20,1.18);
+
+  // Distant orbital collision around the visual bloom.
+  noiseBurst(.040,.0085,5800,true,2200,1.48,.32,false,.42,.001);
+  noiseBurst(.34,.0105,720,false,105,1.49,.14,true,.52,.004);
+  tone(76,.42,.0115,'sine',-35,1.49,.006,.10);
+  tone(228,.31,.0042,'triangle',-72,1.53,.010,-.18);
+}
+
+async function unlockExperienceAudio(){
+  if(!soundEnabled)return;
+  const ac=ensureAudio();
+  if(!ac)return;
+  try{
+    if(ac.state==='suspended')await ac.resume();
+  }catch(_){}
+  if(ac.state!=='running')return;
+
+  audioUnlocked=true;
+
+  if(!introFinished){
+    sfxIntroCinematic();
+  }else if(!S.running&&!S.deathMode){
+    if(!menuMusicActive){
+      menuMusicActive=true;
+      musicTension=0;
+      audioStage=0;
+      audioStep=0;
+      audioNextStep=ac.currentTime+.08;
+    }
+    if(musicBus)setParam(musicBus.gain,.36,.18);
+  }
 }
 
 function sfxFlyby(strength=1){
@@ -1882,7 +1967,14 @@ soundToggleEl.addEventListener('click',()=>{
       audioNextStep=audioCtx.currentTime+.05;
       audioStep=0;
       setParam(audioMaster.gain,.78,.035);
+      if(introFinished&&!S.running&&!S.deathMode){
+        menuMusicActive=true;
+        audioStage=0;
+        musicTension=0;
+        setParam(musicBus.gain,.36,.16);
+      }
     }
+    unlockExperienceAudio();
     sfxUiToggle(true);
   }
 });
@@ -1974,16 +2066,24 @@ function reset(){
 }
 
 function start(){
+  const continuingLandingScore=!!(soundEnabled&&menuMusicActive&&audioCtx&&audioCtx.state==='running');
+
   if(soundEnabled){
     ensureAudio();
     if(audioCtx){
-      audioNextStep=audioCtx.currentTime+.06;
-      audioStep=0;
+      if(!continuingLandingScore){
+        audioNextStep=audioCtx.currentTime+.06;
+        audioStep=0;
+      }
       setParam(audioMaster.gain,.78,.02);
-      setParam(musicBus.gain,.50,.05);
+      setParam(musicBus.gain,.50,.16);
     }
   }
-  reset();S.running=true;
+
+  menuMusicActive=false;
+  reset();
+  S.running=true;
+  app.classList.remove('prelaunch');
   if(soundEnabled)sfxLaunch();
   overlay.style.display='none';
 }
@@ -2726,6 +2826,7 @@ function dash(){
   sfxDash();
   S.shake=3;
 }
+document.addEventListener('pointerdown',unlockExperienceAudio,{passive:true});
 startEl.addEventListener('click',start);
 
 function rewardSkill(comboGain,heatGain,hold=1.75){
@@ -2783,7 +2884,10 @@ function update(dt){
     updateDeathScene(dt);
     return;
   }
-  if(!S.running)return;
+  if(!S.running){
+    if(menuMusicActive)updateAudio();
+    return;
+  }
 
   S.t+=dt;
   S.altitude=Math.min(1,S.t/140);
@@ -4103,6 +4207,7 @@ function loop(now){
 
 resize();
 reset();
+unlockExperienceAudio();
 requestAnimationFrame(drawIntro);
 requestAnimationFrame(loop);
 })();
