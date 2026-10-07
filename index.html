@@ -477,6 +477,59 @@ button{
   .field-route{margin-bottom:9px}
   .launch-footer{display:none}
 }
+
+/* -------------------------------------------------------------------------- */
+/* DEEP-ORBIT COLD OPEN                                                        */
+/* -------------------------------------------------------------------------- */
+#intro{
+  position:absolute;
+  inset:0;
+  z-index:50;
+  overflow:hidden;
+  background:#01030a;
+  opacity:1;
+  transition:opacity .58s cubic-bezier(.3,.05,.2,1);
+  touch-action:none;
+}
+#intro.is-exiting{opacity:0;pointer-events:none}
+#introCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#intro::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(180deg,rgba(0,0,0,.16),transparent 24%,transparent 72%,rgba(0,0,0,.31)),
+    radial-gradient(circle at 50% 45%,transparent 44%,rgba(0,0,0,.28) 100%);
+  mix-blend-mode:multiply;
+}
+.intro-skip{
+  position:absolute;
+  z-index:2;
+  left:50%;
+  bottom:calc(env(safe-area-inset-bottom) + 15px);
+  transform:translateX(-50%);
+  color:rgba(222,242,255,.28);
+  font-size:6px;
+  font-weight:800;
+  letter-spacing:.22em;
+  white-space:nowrap;
+  opacity:0;
+  animation:introSkipIn .7s 1.0s ease forwards;
+}
+#app.intro-running #overlay.start-menu .panel{
+  opacity:0;
+  transform:translateY(12px) scale(.992);
+}
+#overlay.start-menu .panel{
+  transition:opacity .72s ease,transform .82s cubic-bezier(.18,.72,.18,1);
+}
+@keyframes introSkipIn{to{opacity:1}}
+@media(prefers-reduced-motion:reduce){
+  #intro{transition-duration:.12s}
+  .intro-skip{display:none}
+}
+
 #landscape{
   display:none;position:absolute;inset:0;z-index:20;align-items:center;justify-content:center;
   text-align:center;color:white;background:#080a22;padding:30px;
@@ -485,7 +538,13 @@ button{
 </style>
 </head>
 <body>
-<div id="app">
+<div id="app" class="intro-running">
+
+<div id="intro" aria-hidden="true">
+  <canvas id="introCanvas"></canvas>
+  <div class="intro-skip">TAP TO SKIP</div>
+</div>
+
 <canvas id="game"></canvas>
 
 <div id="hud">
@@ -564,6 +623,283 @@ button{
 <script>
 (()=>{
 'use strict';
+
+
+const intro=document.getElementById('intro');
+const introCanvas=document.getElementById('introCanvas');
+const introCtx=introCanvas.getContext('2d',{alpha:false});
+let introW=0,introH=0,introDpr=1;
+let introFinished=false;
+let introStartedAt=performance.now();
+const introReducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function introClamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function introSmooth(a,b,x){
+  const q=introClamp((x-a)/(b-a),0,1);
+  return q*q*(3-2*q);
+}
+function introRand(n){
+  const x=Math.sin(n*91.731+17.113)*43758.5453;
+  return x-Math.floor(x);
+}
+function resizeIntro(){
+  if(!introCanvas)return;
+  introDpr=Math.min(devicePixelRatio||1,1.5);
+  introW=innerWidth;introH=innerHeight;
+  introCanvas.width=Math.floor(introW*introDpr);
+  introCanvas.height=Math.floor(introH*introDpr);
+  introCanvas.style.width=introW+'px';
+  introCanvas.style.height=introH+'px';
+  introCtx.setTransform(introDpr,0,0,introDpr,0,0);
+}
+
+function introRocket(g,x,y,a,scale,color,isPlayer){
+  g.save();
+  g.translate(x,y);
+  g.rotate(a);
+  g.scale(scale,scale);
+
+  const L=isPlayer?34:25;
+  const B=isPlayer?6.6:4.8;
+  const rear=-L*.44;
+  const nose=L*.56;
+
+  g.globalCompositeOperation='lighter';
+  g.globalAlpha=isPlayer?.13:.09;
+  g.fillStyle=color;
+  g.shadowBlur=isPlayer?28:21;
+  g.shadowColor=color;
+  g.beginPath();
+  g.ellipse(0,0,L*.82,B*2.0,0,0,Math.PI*2);
+  g.fill();
+
+  g.globalCompositeOperation='source-over';
+  g.globalAlpha=1;
+  g.shadowBlur=isPlayer?18:13;
+  g.shadowColor=color;
+  g.fillStyle=color;
+  g.beginPath();
+  g.moveTo(nose,0);
+  g.quadraticCurveTo(L*.29,-B,L*.04,-B*.78);
+  g.lineTo(rear,-B*.66);
+  g.lineTo(rear-L*.11,-B*1.34);
+  g.lineTo(rear+L*.02,-B*.70);
+  g.lineTo(rear+L*.02,B*.70);
+  g.lineTo(rear-L*.11,B*1.34);
+  g.lineTo(rear,B*.66);
+  g.lineTo(L*.04,B*.78);
+  g.quadraticCurveTo(L*.29,B,nose,0);
+  g.closePath();
+  g.fill();
+
+  g.fillStyle=isPlayer?'#102235':'#111521';
+  g.shadowBlur=2;
+  g.beginPath();
+  g.moveTo(nose-L*.12,0);
+  g.lineTo(L*.02,-B*.42);
+  g.lineTo(rear+L*.05,-B*.34);
+  g.lineTo(rear+L*.05,B*.34);
+  g.lineTo(L*.02,B*.42);
+  g.closePath();
+  g.fill();
+
+  g.fillStyle='#f8ffff';
+  g.shadowBlur=9;
+  g.shadowColor='#eaffff';
+  g.beginPath();
+  g.moveTo(nose-L*.04,0);
+  g.lineTo(L*.18,-B*.22);
+  g.lineTo(L*.18,B*.22);
+  g.closePath();
+  g.fill();
+
+  g.shadowBlur=18;
+  g.shadowColor='#e7a55f';
+  g.fillStyle='#e7a55f';
+  g.beginPath();
+  g.moveTo(rear,-B*.28);
+  g.lineTo(rear-L*(isPlayer?.37:.30),0);
+  g.lineTo(rear,B*.28);
+  g.closePath();
+  g.fill();
+  g.restore();
+}
+
+function introTrail(g,x,y,a,len,color,alpha,width){
+  const tx=x-Math.cos(a)*len;
+  const ty=y-Math.sin(a)*len;
+  const grad=g.createLinearGradient(tx,ty,x,y);
+  grad.addColorStop(0,'rgba(0,0,0,0)');
+  grad.addColorStop(.55,color);
+  grad.addColorStop(1,'rgba(239,254,255,.92)');
+  g.save();
+  g.globalCompositeOperation='lighter';
+  g.globalAlpha=alpha;
+  g.strokeStyle=grad;
+  g.lineCap='round';
+  g.lineWidth=width;
+  g.shadowBlur=11;
+  g.shadowColor=color;
+  g.beginPath();
+  g.moveTo(tx,ty);
+  g.lineTo(x-Math.cos(a)*10,y-Math.sin(a)*10);
+  g.stroke();
+  g.restore();
+}
+
+function introFlight(g,t,o){
+  const q=introSmooth(o.start,o.end,t);
+  if(q<=0||q>=1)return;
+  const bend=Math.sin(q*Math.PI)*o.bend;
+  const x=o.x0+(o.x1-o.x0)*q;
+  const y=o.y0+(o.y1-o.y0)*q+bend;
+  const dx=o.x1-o.x0;
+  const dy=o.y1-o.y0+Math.cos(q*Math.PI)*Math.PI*o.bend;
+  const a=Math.atan2(dy,dx);
+  const alpha=Math.sin(q*Math.PI);
+  g.save();
+  g.globalAlpha=introClamp(alpha*1.45,0,1);
+  introTrail(g,x,y,a,(o.player?135:92)*o.scale,o.color,(o.player?.34:.22)*alpha,(o.player?3.1:2.0)*o.scale);
+  introRocket(g,x,y,a,o.scale,o.color,!!o.player);
+  g.restore();
+}
+
+function drawIntro(now){
+  if(introFinished)return;
+  const t=(now-introStartedAt)/1000;
+  const g=introCtx,W=introW,H=introH;
+  if(!W||!H){requestAnimationFrame(drawIntro);return}
+
+  g.globalCompositeOperation='source-over';
+  g.globalAlpha=1;
+  g.fillStyle='#01030a';
+  g.fillRect(0,0,W,H);
+
+  const reveal=introSmooth(0,.55,t);
+  const neb=g.createRadialGradient(W*.18,H*.18,0,W*.18,H*.18,Math.max(W,H)*.72);
+  neb.addColorStop(0,'rgba(83,72,188,'+(reveal*.075)+')');
+  neb.addColorStop(.42,'rgba(22,104,137,'+(reveal*.035)+')');
+  neb.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=neb;
+  g.fillRect(0,0,W,H);
+
+  for(let i=0;i<105;i++){
+    const x=introRand(i+1)*W;
+    const y=introRand(i+301)*H*.78;
+    const r=.45+introRand(i+701)*1.25;
+    const tw=.42+.58*Math.sin(t*(.7+introRand(i+19)) + i);
+    g.globalAlpha=reveal*(.20+.46*introRand(i+901))*(.72+.28*tw);
+    g.fillStyle=i%13===0?'#b8f7ff':'#eef5ff';
+    g.fillRect(x,y,r,r);
+  }
+  g.globalAlpha=1;
+
+  const px=W*.58,py=H*.86,pr=W*.47;
+  const planetReveal=introSmooth(.18,.90,t);
+  const pg=g.createRadialGradient(px-pr*.34,py-pr*.52,pr*.06,px,py,pr);
+  pg.addColorStop(0,'rgba(84,114,167,'+(planetReveal*.95)+')');
+  pg.addColorStop(.45,'rgba(27,45,80,'+(planetReveal*.98)+')');
+  pg.addColorStop(.81,'rgba(7,13,28,'+(planetReveal)+')');
+  pg.addColorStop(1,'rgba(1,3,10,'+(planetReveal)+')');
+  g.fillStyle=pg;
+  g.beginPath();
+  g.arc(px,py,pr,0,Math.PI*2);
+  g.fill();
+
+  g.save();
+  g.globalAlpha=planetReveal*.58;
+  g.strokeStyle='#80f4ff';
+  g.lineWidth=Math.max(1.2,pr*.010);
+  g.shadowBlur=17;
+  g.shadowColor='#55efff';
+  g.beginPath();
+  g.arc(px,py,pr*1.003,Math.PI*1.06,Math.PI*1.76);
+  g.stroke();
+  g.restore();
+
+  const mx=W*.16,my=H*.19,mr=7+W*.018;
+  const moonReveal=introSmooth(.42,1.12,t);
+  const mg=g.createRadialGradient(mx-mr*.38,my-mr*.42,1,mx,my,mr);
+  mg.addColorStop(0,'rgba(244,248,255,'+(moonReveal*.88)+')');
+  mg.addColorStop(.48,'rgba(145,159,186,'+(moonReveal*.56)+')');
+  mg.addColorStop(1,'rgba(21,26,42,'+(moonReveal*.88)+')');
+  g.fillStyle=mg;
+  g.beginPath();
+  g.arc(mx,my,mr,0,Math.PI*2);
+  g.fill();
+
+  const flights=[
+    {start:.68,end:2.55,x0:-55,y0:H*.53,x1:W+65,y1:H*.27,bend:-H*.035,scale:.66,color:'#d982ba'},
+    {start:.94,end:2.84,x0:W+55,y0:H*.34,x1:-65,y1:H*.49,bend:H*.055,scale:.58,color:'#87d5de'},
+    {start:1.12,end:2.92,x0:-55,y0:H*.31,x1:W+70,y1:H*.50,bend:H*.030,scale:.54,color:'#dfa86d'},
+    {start:1.38,end:3.03,x0:W+65,y0:H*.61,x1:-75,y1:H*.38,bend:-H*.050,scale:.62,color:'#a391d8'},
+    {start:1.52,end:3.20,x0:-70,y0:H*.66,x1:W+95,y1:H*.30,bend:-H*.075,scale:.94,color:'#63f6ff',player:true},
+    {start:1.76,end:3.28,x0:-55,y0:H*.72,x1:W+75,y1:H*.39,bend:-H*.040,scale:.62,color:'#d48db5'},
+    {start:1.92,end:3.34,x0:W+60,y0:H*.18,x1:-65,y1:H*.31,bend:H*.035,scale:.48,color:'#87d5de'}
+  ];
+  for(const o of flights)introFlight(g,t,o);
+
+  const blastQ=introSmooth(2.40,2.60,t)*(1-introSmooth(2.88,3.16,t));
+  if(blastQ>0){
+    const bx=W*.73,by=H*.33;
+    const br=16+introSmooth(2.40,3.08,t)*W*.24;
+    const bg=g.createRadialGradient(bx,by,0,bx,by,br);
+    bg.addColorStop(0,'rgba(255,255,255,'+(blastQ*.55)+')');
+    bg.addColorStop(.12,'rgba(101,246,255,'+(blastQ*.28)+')');
+    bg.addColorStop(.38,'rgba(192,132,255,'+(blastQ*.13)+')');
+    bg.addColorStop(1,'rgba(0,0,0,0)');
+    g.save();
+    g.globalCompositeOperation='lighter';
+    g.fillStyle=bg;
+    g.fillRect(bx-br,by-br,br*2,br*2);
+    g.globalAlpha=blastQ*.56;
+    g.strokeStyle='#d9fbff';
+    g.lineWidth=1.2;
+    g.shadowBlur=12;
+    g.shadowColor='#65f6ff';
+    g.beginPath();
+    g.arc(bx,by,br*.73,0,Math.PI*2);
+    g.stroke();
+    g.restore();
+  }
+
+  const copyIn=introSmooth(.58,1.18,t)*(1-introSmooth(2.55,3.0,t));
+  g.save();
+  g.globalAlpha=copyIn*.74;
+  g.fillStyle='#aaf7ff';
+  g.font='800 8px ui-monospace,SFMono-Regular,Menlo,monospace';
+  g.textAlign='left';
+  g.fillText('FIELD V // DEEP ORBIT',18,34+(window.visualViewport?visualViewport.offsetTop:0));
+  g.globalAlpha=copyIn*.34;
+  g.fillStyle='#e8f6ff';
+  g.font='700 6px ui-monospace,SFMono-Regular,Menlo,monospace';
+  g.fillText('SIGNAL ACQUIRED  ·  RANGE UNKNOWN',18,48+(window.visualViewport?visualViewport.offsetTop:0));
+  g.restore();
+
+  const end=introSmooth(3.10,3.56,t);
+  if(end>0){
+    g.fillStyle='rgba(190,249,255,'+(Math.sin(end*Math.PI)*.075)+')';
+    g.fillRect(0,0,W,H);
+  }
+
+  if(t>=3.58){
+    finishIntro();
+    return;
+  }
+  requestAnimationFrame(drawIntro);
+}
+
+function finishIntro(){
+  if(introFinished)return;
+  introFinished=true;
+  intro.classList.add('is-exiting');
+  setTimeout(()=>app.classList.remove('intro-running'),120);
+  setTimeout(()=>{intro.style.display='none'},620);
+}
+
+intro.addEventListener('pointerdown',()=>{
+  if((performance.now()-introStartedAt)>650)finishIntro();
+},{passive:true});
 
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d',{alpha:false});
@@ -1444,6 +1780,7 @@ soundToggleEl.addEventListener('click',()=>{
 });
 
 function resize(){
+  resizeIntro();
   DPR=Math.min(devicePixelRatio||1,1.5);
   W=innerWidth;H=innerHeight;
   canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);
@@ -3477,6 +3814,11 @@ function loop(now){
 
 resize();
 reset();
+if(introReducedMotion){
+  setTimeout(finishIntro,120);
+}else{
+  requestAnimationFrame(drawIntro);
+}
 requestAnimationFrame(loop);
 })();
 </script>
