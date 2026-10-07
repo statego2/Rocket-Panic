@@ -571,9 +571,9 @@ function arpNote(chordRoot,tones,index,start,dur,stage,accent=false){
   musicVoice(freq,start,dur,vol,
     finalField?'triangle':(stage>=3?'square':'triangle'),
     cutoff,{
-      attack:finalField?.007:.004,
-      release:finalField?.082:.045,
-      reverb:finalField?.23:.13,
+      attack:finalField ? .007 : .004,
+      release:finalField ? .082 : .045,
+      reverb:finalField ? .23 : .13,
       pan:(index%2===0?-.24:.24)
     });
 }
@@ -582,15 +582,15 @@ function themeNote(chordRoot,chordIndex,slot,start,dur,stage,echo=false){
   const sem=MUSIC_THEME[chordIndex][slot%4];
   const freq=noteFreq(chordRoot,sem);
   const finalField=stage===4;
-  const vol=(finalField?.0180:(.010+stage*.0024))*(echo ? .52 : 1);
+  const vol=(finalField ? .0180 : (.010+stage*.0024))*(echo ? .52 : 1);
 
   // No new FIELD V melody: this is still the exact leitmotif heard in FIELD III/IV.
   musicVoice(echo ? freq*2 : freq,start,dur,vol,
-    finalField?(echo?'sine':'triangle'):'triangle',
-    finalField?3150:(1700+stage*430),{
-      attack:finalField?.020:.012,
-      release:finalField?.20:.11,
-      reverb:finalField?.39:.28,
+    finalField ? (echo ? 'sine' : 'triangle') : 'triangle',
+    finalField ? 3150 : (1700+stage*430),{
+      attack:finalField ? .020 : .012,
+      release:finalField ? .20 : .11,
+      reverb:finalField ? .39 : .28,
       detune:echo?4:-2,
       pan:echo ? .26 : -.10
     });
