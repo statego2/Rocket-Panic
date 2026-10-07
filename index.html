@@ -2213,6 +2213,8 @@ function spawnMissile(){
   const s=perimeterSpawnPoint(margin);
   const x=s.x,y=s.y;
 
+  const flavour=S.zoomStage===4?Math.floor(Math.max(0,S.t-110)/6)%3:-1;
+  // Rotate enemy personalities without introducing new enemies or UI.
   const q=Math.random();
   let type='basic';
   const zoomComp=zoomSpeedCompensation();
@@ -2221,7 +2223,7 @@ function spawnMissile(){
   let color='#ff4fc8';
   let r=5.7;
 
-  if(S.zoomStage>=1 && q<.17){
+  if(S.zoomStage>=1 && q<(flavour===0?.34:.17)){
     type='dart';
     speed=d.speed*1.47*zoomComp;
     turn=d.turn*.37;
@@ -2245,13 +2247,13 @@ function spawnMissile(){
     turn=d.turn*.08;
     color='#ffd45a';
     r=4.5;
-  }else if(S.zoomStage>=3 && q<.77){
+  }else if(S.zoomStage>=3 && q<(flavour===1?.91:.77)){
     type='tracker';
     speed=d.speed*.98*zoomComp;
     turn=d.turn*1.06;
     color='#ff6fb8';
     r=5.8;
-  }else if(S.zoomStage>=4 && q<.87){
+  }else if(S.zoomStage>=4 && q<(flavour===2?.96:.87)){
     type='predictor';
     speed=d.speed*1.18*zoomComp;
     turn=d.turn*.52;
