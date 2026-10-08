@@ -1210,6 +1210,20 @@ if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
   window.__ROCKET_MASTERY_QA__=Object.freeze({
     getEvents:()=>masteryTelemetry.snapshot(),
     clearEvents:()=>masteryTelemetry.clear(),
+    // DEV ONLY: jump to real stage transition for fast browser screenshot tests.
+    warpToField:(field)=>{
+      if(!Number.isInteger(field)||field<0||field>4||!S.running) return false;
+      const thresholds=[0,20,47,77,110];
+      S.t=Math.max(0,thresholds[field]-.015);
+      S.zoomStage=Math.max(0,field-1);
+      S.cameraScale=zoomForStage(S.zoomStage);
+      S.zoomTo=S.cameraScale;S.zoomTransition=1;
+      S.missiles.length=0;S.bullets.length=0;
+      S.patternQueue.length=0;S.spawnBank=0;S.bulletBank=0;
+      S.orbitMotif=-1;S.orbitRest=false;
+      S.invuln=2.0;
+      return true;
+    },
     seed:Number.isInteger(masteryDevSeed)?masteryDevSeed:null
   });
 }
