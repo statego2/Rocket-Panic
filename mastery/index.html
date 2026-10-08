@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#080a22">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Rocket Panic">
-<title>ROCKET PANIC V22</title>
+<meta name="apple-mobile-web-app-title" content="Rocket Mastery">
+<title>ROCKET PANIC — MASTERY (EXPERIMENT)</title>
 <style>
 :root{
   --cyan:#43f5ff;
@@ -767,7 +767,7 @@ button{
     </div>
 
     <div class="launch-hero">
-      <div class="launch-only launch-kicker">DEEP ORBIT SURVIVAL</div>
+      <div class="launch-only launch-kicker">MASTERY // EXPERIMENTAL</div>
       <h1 id="overlayTitle">ROCKET <span>PANIC</span></h1>
       <div class="sub" id="overlaySub">ONE RUN // FIVE FIELDS // NO BRAKES</div>
       <div class="desc" id="overlayDesc">
@@ -2230,7 +2230,7 @@ function reset(){
   overlayDesc.innerHTML='Climb through <b>five escalating flight zones</b> while the sky fills with hunters. Survive long enough to leave the world behind.';
   statsEl.style.display='none';
   startEl.textContent='BEGIN ASCENT';
-  const storedBest=+(localStorage.getItem('rocketPanicV22Best')||0);
+  const storedBest=+(localStorage.getItem('rocketPanicMasteryV2Best')||0);
   if(menuBest)menuBest.textContent=Math.floor(storedBest).toString().padStart(6,'0');
   hud();
 }
@@ -2445,10 +2445,10 @@ function updateDeathScene(dt){
   if(!S.deathResolved && S.deathTimer>=S.deathDuration){
     S.deathResolved=true;
 
-    const previousBest=+(localStorage.getItem('rocketPanicV22Best')||0);
+    const previousBest=+(localStorage.getItem('rocketPanicMasteryV2Best')||0);
     const best=Math.max(S.deathScore,previousBest);
     const isNewBest=S.deathScore>previousBest;
-    localStorage.setItem('rocketPanicV22Best',String(best));
+    localStorage.setItem('rocketPanicMasteryV2Best',String(best));
 
     fs.textContent=S.deathScore.toLocaleString();
     bs.textContent=best.toLocaleString();
