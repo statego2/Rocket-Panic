@@ -57,6 +57,19 @@ assert.ok(after?.charged,'Actual missile physics received the slingshot');
 assert.ok(after.y-before.y>25,'Real rocket moves visibly downward after downward swipe');
 assert.ok(Math.cos(after.angle)>0,'Actual trajectory must point away from the pilot');
 assert.ok(gravity.some(e=>Math.abs(e.turnDeg)>60),'Deflection must be stronger than 60 degrees');
+// A second pass must work via REAL pointer events, without scripting a gesture.
+assert.equal(await page.evaluate(()=>{
+  window.__ROCKET_MASTERY_QA__.clearEvents();
+  return window.__ROCKET_MASTERY_QA__.armGravityFixture(1,false);
+}),true,'Unassisted gravity fixture is armed');
+await page.mouse.move(170,675);
+await page.mouse.down();
+await page.mouse.move(170,697,{steps:4});
+await page.mouse.up();
+await page.waitForTimeout(430);
+const manualSlings=await page.evaluate(()=>
+  window.__ROCKET_MASTERY_QA__.getEvents().filter(e=>e.type==='gravity-sling'));
+assert.ok(manualSlings.length>=1,'Actual pointer swipe must redirect incoming rocket');
 assert.equal(await page.locator('#flightCue').count(),0,'No stage banner overlay');
 assert.equal(await page.locator('#stage').innerText(),'FIELD I',
   'Bare field indicator has no extra textual announcements');
@@ -66,6 +79,7 @@ console.log('BROWSER SMOKE PASS:',JSON.stringify({
   stageChanges:events5.filter(e=>e.type==='field-enter').length,
   orbitEvents:events5.filter(e=>e.type==='orbit-phrase').length,
   gravitySlingshots:gravity.length,
+  manualSwipeSlingshots:manualSlings.length,
   pageErrors:errors
 }));
 await browser.close();
