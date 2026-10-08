@@ -43,7 +43,7 @@ Do not use it for final Judo scoring until M16/M17 are complete.
 node --test tests/*.test.mjs
 ```
 
-Tests include pinned Classic Git blob fingerprint, Mastery JavaScript parsing,
+CI confirmed 28/28 passing Node tests on the experimental branch (2026-10-08, Actions run 37791307768). Tests include pinned Classic Git blob fingerprint, Mastery JavaScript parsing,
 score isolation, five-camera-scale input delta invariants, touch-cancel/blur
 recovery, multi-touch dash, seeded recipe repeatability and telemetry cap.
 A dedicated experimental GitHub Actions workflow is on this branch.
@@ -52,7 +52,7 @@ A dedicated experimental GitHub Actions workflow is on this branch.
 
 - Browser smoke and actual iPhone Safari comparison still pending.
 - GitHub CI confirmation still pending until a successful run is observed.
-- Frame simulation at 30/60/120 FPS is NOT yet implemented.
+- 30/60/120 Hz **encounter director and swept-collision fixtures** now pass; full rendered-game fixed-step/10-minute performance profiling is NOT yet implemented.
 - This is a technical shell; intentional Missile Judo, Infinite Orbit motifs
   and Escape Velocity redesign are future WBS tickets.
 - Do not claim this feature-branch path is an independently hosted URL.
