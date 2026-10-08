@@ -1274,6 +1274,64 @@ const control={
 };
 
 
+// MASTERY EXPERIENCE RULES — the Classic version cannot access this path.
+const MASTERY_FIELD_TITLES=[
+  'I  // THE FIRST DANCE',
+  'II // THE HUNT BEGINS',
+  'III // TURN THE PURSUIT',
+  'IV // BREAK THE SKY',
+  'V // INFINITE ORBIT'
+];
+const MASTERY_ORBIT_MOTIFS=[
+  {title:'PURSUIT SPIRAL',short:'SPIRAL',color:'#71fcff'},
+  {title:'LANCE CORRIDOR',short:'CORRIDOR',color:'#ffcf80'},
+  {title:'ORBITAL CROSSFIRE',short:'CROSSFIRE',color:'#eeb3ff'}
+];
+// 18-second readable musical phrases: ~14 seconds challenge, 4 seconds relief.
+// Different recipes provide different spatial decisions, not just different speed.
+function masteryOrbitState(age){
+  const a=Math.max(0,age);
+  const phase=a%54;
+  const index=Math.min(2,Math.floor(phase/18));
+  const within=phase-index*18;
+  return {index,rest:within>=14,within,cycle:Math.floor(a/54)};
+}
+function showMasteryCue(text,duration=2.0){
+  S.cueText=text;
+  S.cueUntil=S.t+duration;
+}
+function updateMasteryOrbit(){
+  if(S.zoomStage!==4)return;
+  const state=masteryOrbitState(S.stageAge);
+  if(state.index!==S.orbitMotif || state.rest!==S.orbitRest){
+    const newPhrase=state.index!==S.orbitMotif;
+    S.orbitMotif=state.index;
+    S.orbitRest=state.rest;
+    S.patternQueue.length=0; S.patternDelay=0;
+    S.nextPattern=state.rest?4.0:Math.min(S.nextPattern,1.5);
+    if(state.rest){
+      showMasteryCue('BREATHE // REPOSITION',1.25);
+    }else if(S.stageAge>2){
+      showMasteryCue(MASTERY_ORBIT_MOTIFS[state.index].title,2.1);
+    }
+    masteryTelemetry.emit('orbit-phrase',{
+      motif:state.index,rest:state.rest,cycle:state.cycle
+    },S.t);
+  }
+}
+function masteryJudoClassification(m,n,distancePx,inputTravel,recentMoveAge,age){
+  // Heuristic local causal evidence, not a claim of exact counterfactual causality.
+  // A stationary pilot or an offscreen impact cannot score as intentional Judo.
+  const paired=m.pairTag!=null && m.pairTag===n.pairTag;
+  const moved=Math.max(inputTravel-(m.aimTravel||0),inputTravel-(n.aimTravel||0));
+  const fresh=recentMoveAge<1.55&&recentMoveAge>=0;
+  const local=distancePx<195;
+  const earned=fresh&&local&&moved>=26&&
+    (paired || (m.near||n.near)) &&
+    (m.age>.38||n.age>.38);
+  return {earned,paired,moved,local};
+}
+
 let soundEnabled=true;
 let menuMusicActive=false;
 let introSoundPlayed=false;
