@@ -731,6 +731,20 @@ button{
   text-align:center;color:white;background:#080a22;padding:30px;
 }
 @media(orientation:landscape){#landscape{display:flex}}
+/* Mastery-only cinematic cues. Never block touches. */
+#flightCue{position:absolute;top:23%;left:50%;width:92%;z-index:5;
+  transform:translate(-50%,8px);pointer-events:none;text-align:center;opacity:0;
+  transition:opacity .22s ease,transform .24s ease;font-weight:900;
+  font-size:clamp(12px,3.3vw,17px);letter-spacing:.23em;color:#e7faff;
+  text-shadow:0 0 16px rgba(89,237,255,.65),0 2px 12px #050b23}
+#flightCue.visible{opacity:.93;transform:translate(-50%,0)}
+#skillHud{font-size:8px;letter-spacing:.14em;color:#ffd7a5;opacity:0;
+  margin-top:4px;text-shadow:0 0 12px rgba(255,168,90,.4);
+  transition:opacity .24s ease}
+#masteryResult{display:none;margin:6px 0 10px;font-size:9px;letter-spacing:.08em;
+  color:#bdf9ff;text-align:center;line-height:1.5}
+#overlay.death #masteryResult{display:block}
+@media (prefers-reduced-motion:reduce){#flightCue,#skillHud{transition:none}}
 </style>
 </head>
 <body>
@@ -755,9 +769,11 @@ button{
   <div id="combo">×1.0</div>
   <div id="time">0.0s</div>
   <div id="stage">FIELD I</div>
+  <div id="skillHud">JUDO 0 · BEST CHAIN ×1</div>
 </div>
+<div id="flightCue" aria-hidden="true"></div>
 
-<div id="hint">SURVIVE DEEP ORBIT</div>
+<div id="hint">BAIT · CROSS · BREAK ORBIT</div>
 
 <div id="overlay" class="start-menu">
   <div class="panel">
@@ -769,9 +785,9 @@ button{
     <div class="launch-hero">
       <div class="launch-only launch-kicker">MASTERY // EXPERIMENTAL</div>
       <h1 id="overlayTitle">ROCKET <span>PANIC</span></h1>
-      <div class="sub" id="overlaySub">ONE RUN // FIVE FIELDS // NO BRAKES</div>
+      <div class="sub" id="overlaySub">USE THEIR MOMENTUM // RULE THE CHAOS</div>
       <div class="desc" id="overlayDesc">
-        Climb through <b>five escalating flight zones</b> while the sky fills with hunters. Survive long enough to leave the world behind.
+        <b>Bait pursuing rockets into each other.</b> Master five flight fields, choreograph collisions, and survive the infinite orbit.
       </div>
     </div>
 
@@ -784,6 +800,7 @@ button{
       <div class="card"><b id="fn">I</b><span>FIELD REACHED</span></div>
     </div>
 
+    <div id="masteryResult" aria-live="polite"></div>
     <div class="launch-only launch-console">
       <div class="route-head"><span>ASCENT ROUTE</span><strong>FIELD I → V</strong></div>
       <div class="field-route">
@@ -808,7 +825,7 @@ button{
 
       <button id="start">BEGIN ASCENT</button>
       <button id="soundToggle">SOUND // ON</button>
-      <div class="launch-footer">SURVIVE // CLIMB // BREAK ORBIT</div>
+      <div class="launch-footer">DODGE // BAIT // CROSS // ASCEND</div>
     </div>
 
   </div>
@@ -1133,6 +1150,9 @@ const scoreEl=document.getElementById('score');
 const comboEl=document.getElementById('combo');
 const timeEl=document.getElementById('time');
 const stageEl=document.getElementById('stage');
+const skillHudEl=document.getElementById('skillHud');
+const flightCueEl=document.getElementById('flightCue');
+const masteryResultEl=document.getElementById('masteryResult');
 const healthEl=document.getElementById('health');
 const overlay=document.getElementById('overlay');
 const overlayTitle=document.getElementById('overlayTitle');
@@ -1229,7 +1249,11 @@ const S={
   deathSpawnBank:0,
   shockwaves:[],
   playerFrameX:0,playerFrameY:0,
-  collisions:{steered:0,passive:0,dash:0}
+  collisions:{steered:0,passive:0,dash:0},
+  judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
+  recentMoveAt:-99,inputTravel:0,
+  cueUntil:0,cueText:'',orbitMotif:-1,orbitRest:false,
+  balletCount:0,patternSerial:0
 };
 
 const player={
@@ -2208,7 +2232,12 @@ function hud(){
   comboEl.style.transform=`scale(${(1+flow*.11+(S.nearFlash||0)*.025).toFixed(3)})`;
   comboEl.style.textShadow=`0 0 ${12+flow*16}px hsla(${hue} 100% 65% / ${.38+flow*.36})`;
   timeEl.textContent=S.t.toFixed(1)+'s';
-  stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0];
+  stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0]+
+    (S.zoomStage===4 && S.orbitMotif>=0?' · '+MASTERY_ORBIT_MOTIFS[S.orbitMotif].short:'');
+  skillHudEl.textContent='JUDO '+S.judoCount+' · BEST CHAIN ×'+Math.max(1,S.judoPeak);
+  skillHudEl.style.opacity=S.judoCount>0?'1':'0';
+  flightCueEl.textContent=S.cueText;
+  flightCueEl.classList.toggle('visible',S.running&&S.t<S.cueUntil);
   [...healthEl.children].forEach((e,i)=>{
     e.classList.toggle('off',i>=player.hp);
     if(i===player.hp && player.hp<3 && S.shieldRegenDelay<=0){
@@ -2255,7 +2284,11 @@ function reset(){
     deathTime:0,
     deathSpawnBank:0,
     shockwaves:[],
-    collisions:{steered:0,passive:0,dash:0}
+    collisions:{steered:0,passive:0,dash:0},
+    judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
+    recentMoveAt:-99,inputTravel:0,
+    cueUntil:0,cueText:'',orbitMotif:-1,orbitRest:false,
+    balletCount:0,patternSerial:0
   });
   player.x=W*.5;player.y=H*.42;player.vx=player.speed*.7;player.vy=0;
   S.playerFrameX=player.x;S.playerFrameY=player.y;
@@ -2265,14 +2298,17 @@ function reset(){
   musicTension=0;
   audioStage=-1;
   skillPercLast=-99;
+  flightCueEl.classList.remove('visible');
+  skillHudEl.style.opacity='0';
+  masteryResultEl.textContent='';
   app.classList.remove('death');
   overlay.classList.remove('death');
   overlay.classList.remove('new-best');
   overlay.style.removeProperty('--death-accent-rgb');
   overlay.classList.add('start-menu');
   overlayTitle.innerHTML='ROCKET <span>PANIC</span>';
-  overlaySub.textContent='ONE RUN // FIVE FIELDS // NO BRAKES';
-  overlayDesc.innerHTML='Climb through <b>five escalating flight zones</b> while the sky fills with hunters. Survive long enough to leave the world behind.';
+  overlaySub.textContent='USE THEIR MOMENTUM // RULE THE CHAOS';
+  overlayDesc.innerHTML='<b>Bait pursuing rockets into each other.</b> Master five flight fields, choreograph collisions, and survive the infinite orbit.';
   statsEl.style.display='none';
   startEl.textContent='BEGIN ASCENT';
   const storedBest=+(localStorage.getItem('rocketPanicMasteryV2Best')||0);
@@ -2298,6 +2334,7 @@ function start(){
   menuMusicActive=false;
   reset();
   S.running=true;
+  showMasteryCue('MASTER THE PURSUIT',2.7);
   masteryTelemetry.emit('run-start',{field:0},0);
   app.classList.remove('prelaunch');
   if(soundEnabled)sfxLaunch();
@@ -2536,6 +2573,8 @@ function updateDeathScene(dt){
     overlayDesc.textContent=lines[S.deathStage]||lines[0];
 
     statsEl.style.display='grid';
+    masteryResultEl.textContent=S.judoCount+
+      ' JUDO CROSSOVERS  ·  PEAK CHAIN ×'+Math.max(1,S.judoPeak);
     startEl.textContent='RE-LAUNCH';
     if(menuBest)menuBest.textContent=Math.floor(best).toString().padStart(6,'0');
     overlay.classList.add('death');
@@ -2947,6 +2986,8 @@ function applyRelativeMove(dx,dy,eventTime=performance.now()){
   const mag=Math.hypot(actualX,actualY);
 
   if(mag>0.1){
+    S.recentMoveAt=S.t;
+    S.inputTravel+=mag*Math.max(.28,S.cameraScale);
     control.moveX=actualX;
     control.moveY=actualY;
     control.desiredAngle=Math.atan2(actualY,actualX);
@@ -3296,6 +3337,7 @@ function update(dt){
   const wantedStage=zoomStageForTime(S.t);
   if(wantedStage!==S.zoomStage){
     S.zoomStage=wantedStage;
+    showMasteryCue(MASTERY_FIELD_TITLES[wantedStage],2.8);
     masteryTelemetry.emit('field-enter',{field:wantedStage},S.t);
     S.zoomFrom=S.cameraScale;
     S.zoomTo=zoomForStage(wantedStage);
