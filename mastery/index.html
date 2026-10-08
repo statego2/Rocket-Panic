@@ -2915,6 +2915,24 @@ function applyRelativeMove(dx,dy,eventTime=performance.now()){
   control.lastEventTime=eventTime;
 }
 
+// Explicit pointer cleanup prevents stuck steering after iOS gesture cancellations,
+// lost capture, tab backgrounding and browser focus changes.
+function releaseSteering(){
+  const id=control.primaryId;
+  control.active=false;
+  control.primaryId=null;
+  control.moveX=0;
+  control.moveY=0;
+  control.speedX=0;
+  control.speedY=0;
+  control.lastEventTime=0;
+  player.vx=0;
+  player.vy=0;
+  if(id!=null){
+    try{canvas.releasePointerCapture?.(id)}catch(_err){/* capture already gone */}
+  }
+}
+
 function pointerDown(e){
   if(S.deathMode && !S.deathResolved){
     if(S.deathTimer>=.7){S.deathTimer=S.deathDuration;updateDeathScene(0);}
@@ -2935,7 +2953,7 @@ function pointerDown(e){
     control.touchY=e.clientY;
     control.lastEventTime=e.timeStamp;
     control.speedX=0;control.speedY=0;
-    canvas.setPointerCapture?.(e.pointerId);
+    try{canvas.setPointerCapture?.(e.pointerId)}catch(_err){/* fallback to normal pointer events */}
     return;
   }
 
@@ -2948,7 +2966,10 @@ function pointerMove(e){
   if(!control.active || e.pointerId!==control.primaryId)return;
   e.preventDefault();
 
-  const events=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+  // Safari may return no samples; some engines omit the final dispatched
+  // pointer sample. Always include e to conserve the full finger displacement.
+  const coalesced=typeof e.getCoalescedEvents==='function'?e.getCoalescedEvents():null;
+  const events=coalesced?.length?[...coalesced,e]:[e];
 
   for(const p of events){
     const dx=p.clientX-control.lastX;
@@ -2966,21 +2987,20 @@ function pointerMove(e){
 function pointerUp(e){
   if(e.pointerId!==control.primaryId)return;
   e.preventDefault();
-
-  control.active=false;
-  control.primaryId=null;
-  control.moveX=0;
-  control.moveY=0;
-  control.speedX=0;
-  control.speedY=0;
-  player.vx=0;
-  player.vy=0;
+  releaseSteering();
 }
 
 canvas.addEventListener('pointerdown',pointerDown,{passive:false});
 canvas.addEventListener('pointermove',pointerMove,{passive:false});
 canvas.addEventListener('pointerup',pointerUp,{passive:false});
 canvas.addEventListener('pointercancel',pointerUp,{passive:false});
+canvas.addEventListener('lostpointercapture',e=>{
+  if(e.pointerId===control.primaryId)releaseSteering();
+});
+window.addEventListener('blur',releaseSteering);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)releaseSteering();
+});
 
 function dash(){
   if(!S.running||S.dashCd>0)return;
