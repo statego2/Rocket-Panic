@@ -2841,6 +2841,10 @@ function spawnMissile(opts={}){
   S.missiles.push({
     x,y,angle,speed,turn,color,r,type,
     age:0,near:false,dead:false,trail:[],
+    // Encounter membership and the actual amount of pilot displacement
+    // since this particular projectile acquired its initial heading.
+    pairTag:opts.pairTag==null?null:opts.pairTag,
+    aimTravel:S.inputTravel,
     phase:encounterRandom()*TAU,
     bias:(encounterRandom()<.5?-1:1)*(.42+encounterRandom()*.28),
     leadTime,
@@ -2868,7 +2872,7 @@ function spawnMissile(opts={}){
 
 function beginThreatPattern(){
   const stage=S.zoomStage;
-  if(stage<1||S.patternQueue.length||S.breakoutSafety>0)return false;
+  if(S.patternQueue.length||S.breakoutSafety>0)return false;
 
   const base=encounterRandom()*TAU;
   const pincer=[
@@ -2901,12 +2905,59 @@ function beginThreatPattern(){
     {gap:.20,spawnAngle:base+Math.PI+.30,type:'interceptor',speedMul:.91,turnMul:.82,targetOffsetX:42,targetOffsetY:22}
   ];
 
-  const recipes=stage===1?[pincer,swarm]:[pincer,swarm,chase,cross,gap];
+  // Ballet opportunities: committed converging approaches with enough room to
+  // dodge through. Intentional pursuer pairing is a genuine mechanic, not FX.
+  const tag=(S.patternSerial||0)+1;
+  S.patternSerial=tag;
+  const balletArc=[
+    {gap:.16,spawnAngle:base-.85,type:stage<2?'basic':'hook',speedMul:.78,turnMul:.80,pairTag:tag},
+    {gap:.22,spawnAngle:base+.85,type:stage<2?'basic':'hook',speedMul:.81,turnMul:.77,pairTag:tag}
+  ];
+  const knifeThread=[
+    {gap:.12,spawnAngle:base,type:'interceptor',speedMul:.88,turnMul:.67,
+      targetOffsetX:-56,targetOffsetY:-42,pairTag:tag},
+    {gap:.19,spawnAngle:base+Math.PI,type:'interceptor',speedMul:.89,turnMul:.67,
+      targetOffsetX:56,targetOffsetY:42,pairTag:tag}
+  ];
+  const crossRelease=[
+    {gap:.14,spawnAngle:base-.32,type:'predictor',speedMul:.90,turnMul:.78,
+      targetOffsetX:35,pairTag:tag},
+    {gap:.24,spawnAngle:base+Math.PI+.20,type:'dart',speedMul:.90,turnMul:.80,
+      targetOffsetX:-35,pairTag:tag}
+  ];
+  const early=[balletArc,knifeThread];
+  const mid=[balletArc,knifeThread,crossRelease,pincer,gap];
+  const orbit=S.orbitMotif==null?0:S.orbitMotif;
+  const spiral=[
+    {gap:.15,spawnAngle:base-.68,type:'tracker',speedMul:.83,turnMul:.68,pairTag:tag},
+    {gap:.16,spawnAngle:base-.12,type:'hook',speedMul:.91,turnMul:.79,pairTag:tag},
+    {gap:.21,spawnAngle:base+.52,type:'tracker',speedMul:.82,turnMul:.72,pairTag:tag}
+  ];
+  const corridor=[
+    {gap:.12,spawnAngle:base,type:'interceptor',speedMul:.83,turnMul:.60,
+      targetOffsetY:-58,pairTag:tag},
+    {gap:.15,spawnAngle:base+Math.PI,type:'interceptor',speedMul:.83,turnMul:.60,
+      targetOffsetY:58,pairTag:tag},
+    {gap:.18,spawnAngle:base+Math.PI*.5,type:'lance',speedMul:.70,turnMul:.80,
+      targetOffsetX:58,pairTag:tag}
+  ];
+  const crossfire=[
+    {gap:.12,spawnAngle:base,type:'dart',speedMul:.86,turnMul:.58,pairTag:tag},
+    {gap:.17,spawnAngle:base+Math.PI,type:'predictor',speedMul:.81,turnMul:.70,
+      targetOffsetX:48,pairTag:tag},
+    {gap:.20,spawnAngle:base+Math.PI*.5,type:'interceptor',speedMul:.85,turnMul:.70,
+      targetOffsetY:-48,pairTag:tag},
+    {gap:.20,spawnAngle:base+Math.PI*1.5,type:'hook',speedMul:.83,turnMul:.76,pairTag:tag}
+  ];
+  const recipes=stage===0?[balletArc]:stage===1?early:stage<4?mid:
+    (orbit===0?[spiral,balletArc]:
+     orbit===1?[corridor,knifeThread]:[crossfire,crossRelease]);
   let pick=(encounterRandom()*recipes.length)|0;
   if(recipes.length>1 && pick===S.lastPattern)pick=(pick+1)%recipes.length;
   S.lastPattern=pick;
   S.patternQueue=recipes[pick].map(v=>({...v}));
   S.patternDelay=0;
+  masteryTelemetry.emit('ballet-pattern',{stage,tag,pick,orbit},S.t);
   return true;
 }
 
@@ -2924,11 +2975,12 @@ function updatePatternDirector(dt,d){
   }
 
   S.nextPattern-=dt;
-  if(!busy && S.nextPattern<=0 && S.zoomStage>=1 && !d.breath &&
-     d.pressure>.84 && S.breakoutSafety<=0 &&
-     S.missiles.length<Math.min(d.cap-3,Math.max(4,d.cap*.58))){
+  if(!busy && S.nextPattern<=0 && S.t>7 && !S.orbitRest &&
+     !d.breath && d.pressure>.80 && S.breakoutSafety<=0 &&
+     S.missiles.length<Math.min(d.cap-2,Math.max(4,d.cap*.58))){
     busy=beginThreatPattern();
-    S.nextPattern=Math.max(4.0,6.9-S.zoomStage*.48)+encounterRandom()*1.6;
+    S.nextPattern=(S.zoomStage===4?4.0:Math.max(4.5,6.9-S.zoomStage*.48))+
+      encounterRandom()*1.6;
   }
 
   return busy;
@@ -3505,6 +3557,7 @@ function update(dt){
   for(const p of player.trail)p.life-=dt;
 
 
+  updateMasteryOrbit();
   const d=difficulty();
   updateAudio();
 
@@ -3516,8 +3569,9 @@ function update(dt){
   S.flavour=Math.floor(Math.max(0,S.t-110)/6)%3;
 
   const patternBusy=updatePatternDirector(worldDt,d);
-  // Let authored patterns read as patterns instead of burying them in ambient traffic.
-  S.spawnBank+=worldDt*d.rate*(patternBusy?.08:1);
+  // Real recovery: stop scheduling NEW ambient projectiles for four seconds
+  // of each orbit phrase. Existing threats retain their physically correct paths.
+  S.spawnBank+=worldDt*d.rate*(S.orbitRest?0:patternBusy?.06:1);
   while(S.spawnBank>=1&&S.missiles.length<d.cap){
     S.spawnBank-=1;
     spawnMissile();
@@ -3525,7 +3579,7 @@ function update(dt){
 
   // Deep FIELD V introduces a second, lightweight pressure layer.
   // It starts sparse and ramps continuously instead of appearing as a sudden wall.
-  if(S.zoomStage===4 && S.t>145){
+  if(S.zoomStage===4 && S.t>145 && !S.orbitRest){
     const deep=S.t-145;
     const bulletRate=Math.min(1.45,.18 + deep*.0085);
     const bulletCap=Math.min(24,5+Math.floor(deep/10));
@@ -3684,7 +3738,8 @@ function update(dt){
   }
   S.particles=S.particles.filter(p=>p.life>0);
 
-  S.score+=dt*(38+S.t*.16)*S.combo;
+  // Mastery score favors control of enemy interactions over passive survival.
+  S.score+=dt*(25+Math.min(26,S.t*.10))*Math.min(3.5,S.combo);
   hud();
 }
 
