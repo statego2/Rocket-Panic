@@ -2193,10 +2193,15 @@ function musicalSkillHit(kind,strength=1){
       attack:.002,release:.045,reverb:.22,pan:(Math.random()*2-1)*.20
     });
   }else if(kind==='collision'){
+    // Actual close-time missile collisions unlock a gentle musical harmony.
     kick(now,.014+flow*.011,1.025);
     musicVoice(freq,now+.008,.105,.0030+flow*.0038,'triangle',1600,{
       attack:.003,release:.070,reverb:.24
     });
+    if(strength>1.12){
+      musicVoice(freq*1.5,now+.060,.20,.0026*Math.min(1.6,strength),
+        'sine',2900,{attack:.008,release:.15,reverb:.34});
+    }
   }else if(kind==='dashKill'){
     tom(now,.011+flow*.009,112+flow*18);
     musicVoice(freq*2,now+.010,.090,.0032+flow*.0044,'sine',3600,{
@@ -4237,6 +4242,48 @@ function drawPlanet(cx,cy,r,alpha,detail,deepOrbit){
   ctx.restore();
 }
 
+function drawMasteryAtmosphere(){
+  // Screen-space artwork only; never affect collision space or controls.
+  if(S.deathMode)return;
+  const field=S.zoomStage, reduced=introReducedMotion;
+  const t=reduced?0:S.t;
+  ctx.save();
+  if(field===0){
+    const y=H*.79, sweep=(t*37)%(W+70)-35;
+    ctx.strokeStyle='rgba(94,245,255,.11)';
+    ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(sweep-38,y+4);
+    ctx.lineTo(sweep,y-12);ctx.lineTo(sweep+38,y+4);ctx.stroke();
+  }else if(field===1){
+    const glow=ctx.createLinearGradient(0,H*.16,W,H*.54);
+    glow.addColorStop(0,'rgba(54,255,235,0)');
+    glow.addColorStop(.48,'rgba(90,208,255,.032)');
+    glow.addColorStop(1,'rgba(235,100,255,0)');
+    ctx.fillStyle=glow;ctx.fillRect(0,H*.14,W,H*.46);
+  }else if(field===2){
+    ctx.lineWidth=1;ctx.strokeStyle='rgba(184,228,255,.085)';
+    ctx.beginPath();ctx.ellipse(W*.5,H*1.18,W*.95,H*.63,-.08,3.58,5.87);
+    ctx.stroke();
+  }else if(field===3){
+    ctx.lineWidth=1.15;ctx.strokeStyle='rgba(128,198,255,.082)';
+    ctx.beginPath();ctx.ellipse(W*.55,H*.91,W*.94,H*.37,-.12,3.45,6.08);
+    ctx.stroke();
+    ctx.beginPath();ctx.ellipse(W*.55,H*.91,W*.98,H*.41,-.12,3.55,5.96);
+    ctx.stroke();
+  }else if(field===4){
+    const motif=MASTERY_ORBIT_MOTIFS[Math.max(0,S.orbitMotif)];
+    ctx.strokeStyle=motif.color;ctx.globalAlpha=S.orbitRest?.065:.105;
+    ctx.lineWidth=1.1;
+    const drift=reduced?0:t*.10;
+    ctx.beginPath();
+    ctx.ellipse(W*.5,H*.43,W*.70,H*.27,drift,Math.PI*.08,Math.PI*.89);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(W*.5,H*.43,W*.82,H*.34,drift+1.1,Math.PI*.17,Math.PI*.96);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 function background(){
   const t=S.t;
   const stage=S.zoomStage;
@@ -4585,6 +4632,7 @@ function draw(){
   ctx.translate(sx,sy);
 
   background();
+  drawMasteryAtmosphere();
   drawDeathVista();
 
   // World camera zooms; HUD/background remain stable.
