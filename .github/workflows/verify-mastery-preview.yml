@@ -4,7 +4,7 @@ on:
     branches: [mastery-preview]
   pull_request:
     branches:
-      - 'experiment/mastery-v2/phase0-shell'
+      - 'mastery-preview'
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,10 +16,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://raw.githack.com/statego2/Rocket-Panic/mastery-preview/mastery/index.html"
+          URL="https://raw.githack.com/statego2/Rocket-Panic/c8a11cc9a90d62cf2a96b740b1852688892ab5a0/mastery/index.html"
           curl --fail --location --show-error --silent --retry 5 --retry-delay 3 --max-time 30 -D /tmp/headers.txt -o /tmp/mastery-preview.html "$URL"
           grep -Eiq '^content-type:[[:space:]]*text/html' /tmp/headers.txt
           grep -Fq 'MASTERY // EXPERIMENTAL' /tmp/mastery-preview.html
+          grep -Fq 'MASTERY_ORBIT_MOTIFS' /tmp/mastery-preview.html
+          grep -Fq 'masteryJudoClassification' /tmp/mastery-preview.html
+          grep -Fq 'drawMasteryAtmosphere' /tmp/mastery-preview.html
           grep -Fq 'rocketPanicMasteryV2Best' /tmp/mastery-preview.html
           if grep -Fq 'rocketPanicV22Best' /tmp/mastery-preview.html; then
             echo "ERROR: unexpected Classic score key in Mastery preview" >&2
