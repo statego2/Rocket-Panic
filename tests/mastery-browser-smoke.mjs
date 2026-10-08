@@ -3,7 +3,11 @@ import {chromium} from 'playwright';
 import {mkdir} from 'node:fs/promises';
 
 await mkdir('test-artifacts',{recursive:true});
-const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+const systemChrome=process.env.MASTERY_SYSTEM_CHROME;
+const browser=await chromium.launch({
+  headless:true,args:['--no-sandbox'],
+  ...(systemChrome?{executablePath:systemChrome}:{})
+});
 const context=await browser.newContext({
   viewport:{width:390,height:844},deviceScaleFactor:3,
   isMobile:true,hasTouch:true,
