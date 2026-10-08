@@ -1347,25 +1347,27 @@ function updateMasteryOrbit(){
 // A close-pass gravitational slingshot: the pilot's actual lateral swipe bends
 // the missile in that SAME direction. No new button, no teleport, no attraction
 // into the player's hitbox. Pure geometry is independently testable.
-function masteryGravityImpulse(heading,dx,dy,distancePx,hitPx,outerPx,moveAge){
-  if(!Number.isFinite(heading)||!Number.isFinite(dx)||!Number.isFinite(dy)||
-     !Number.isFinite(distancePx)||!Number.isFinite(hitPx)||
-     !Number.isFinite(outerPx)||!Number.isFinite(moveAge))return null;
-  if(moveAge<0||moveAge>.20)return null;
-  const mag=Math.hypot(dx,dy);
-  if(mag<9||outerPx<=hitPx+5)return null;
-  const minSafe=hitPx+4.2;
-  if(distancePx<=minSafe||distancePx>=outerPx)return null;
-  const vx=Math.cos(heading),vy=Math.sin(heading);
-  const sideways=vx*(dy/mag)-vy*(dx/mag);
-  // Following the missile or moving against it cannot magically bend it.
-  if(Math.abs(sideways)<.36)return null;
-  const closeness=Math.max(0,Math.min(1,
-    (outerPx-distancePx)/Math.max(1,outerPx-minSafe)));
-  const radians=Math.sign(sideways)*(.19+.33*closeness)*
-    (.76+.24*Math.abs(sideways));
-  return {heading:heading+radians,radians,
-    hold:.35+.25*closeness,closeness};
+// Screen-pixel gesture-driven real missile deflection; never changes player movement.
+function masteryGravityImpulse(heading,dx,dy,distancePx,hitPx,outerPx,moveAge,awayHeading=null){
+  if(![heading,dx,dy,distancePx,hitPx,outerPx,moveAge].every(Number.isFinite))return null;
+  if(moveAge<0||moveAge>.48||Math.hypot(dx,dy)<10)return null;
+  if(outerPx<=hitPx+8)return null;
+  const safe=hitPx+4;
+  if(distancePx<=safe||distancePx>=outerPx)return null;
+  const closeness=Math.max(0,Math.min(1,(outerPx-distancePx)/(outerPx-safe)));
+  const swipe=Math.atan2(dy,dx);
+  const delta=((swipe-heading+Math.PI*3)%(Math.PI*2))-Math.PI;
+  if(Math.abs(delta)<.31)return null;
+  let radians=Math.max(-1.46,Math.min(1.46,delta*(.80+.17*closeness)));
+  let directed=heading+radians;
+  if(Number.isFinite(awayHeading)&&Math.cos(directed-awayHeading)<.10){
+    // Redirect around, not through, the player's collision circle.
+    const side=Math.sin(swipe-awayHeading);
+    if(Math.abs(side)<.20)return null;
+    directed=awayHeading+Math.sign(side)*(Math.PI/2-.17);
+    radians=((directed-heading+Math.PI*3)%(Math.PI*2))-Math.PI;
+  }
+  return {heading:directed,radians,closeness,hold:1.05+.26*closeness};
 }
 function masteryJudoClassification(m,n,distancePx,inputTravel,recentMoveAge,age){
   // Heuristic local causal evidence, not a claim of exact counterfactual causality.
@@ -3331,7 +3333,8 @@ function dash(){
     rewardSkill(.48,.18,1.90);
     S.score+=260*S.combo;
     S.collisions.dash++;
-    floatText(x,y-18,'DASH BREAK','#bffcff');
+
+
     musicalSkillHit('dashKill',1);
   }
   // Crossing a bullet during a dash also consumes it without taking damage.
@@ -3452,8 +3455,8 @@ function resolveCombatCollisions(px0,py0){
         if(S.judoChain>=2){
           shockwave(x,y,'#ffe6b3',.48);
         }
-        floatText(x,y-15,S.judoChain>=2?'JUDO CHAIN ×'+S.judoChain:
-          'MISSILE JUDO','#ffe9bd');
+
+
       }else{
         S.collisions.passive++;
         // A passive world collision is pretty, not a mastery score farm.
@@ -3474,7 +3477,8 @@ function resolveCombatCollisions(px0,py0){
       if(S.dashT>0){
         rewardSkill(.48,.18,1.90);
         S.score+=260*S.combo;
-        floatText(player.x,player.y-18,'DASH BREAK','#bffcff');
+
+
         musicalSkillHit('dashKill',1);
         S.collisions.dash++;
       }else if(S.invuln<=0){
@@ -3756,33 +3760,35 @@ function update(dt){
     const rx1=m.x-player.x,ry1=m.y-player.y;
     const dangerRadius=hitRadius()+enemyRadius(m)+1/Math.max(.28,S.cameraScale);
     const nearMin=segmentMinDistanceSq(rx0,ry0,rx1,ry1);
-    if(!m.near && sweptCircleTOI(rx0,ry0,rx1,ry1,dangerRadius)<0 &&
-       nearMin<nearRadius()*nearRadius() &&
-       nearMin>Math.pow(dangerRadius+4/Math.max(.28,S.cameraScale),2)){
-      m.near=true;S.near++;
-      // Apply only after the entire swept segment was proven collision-free;
-      // this changes the NEXT frame's trajectory, never retroactively erases a hit.
-      if(!m.gravityCharged && S.breakoutSafety<=0 && S.dashT<=0){
-        const scale=Math.max(.28,S.cameraScale);
-        const impulse=masteryGravityImpulse(m.angle,S.gravityGestureX,
-          S.gravityGestureY,Math.sqrt(nearMin)*scale,
-          dangerRadius*scale,nearRadius()*scale,
-          S.t-S.gravityGestureAt);
-        if(impulse){
-          m.gravityCharged=true;
-          m.gravityHeading=impulse.heading;
-          m.gravityHold=impulse.hold;
-          m.angle=impulse.heading;
-          S.gravitySlingshots++;
-          S.score+=90*Math.min(4,S.combo);
-          burst(m.x,m.y,6,'#95ffe2',.32);
-          floatText(m.x,m.y-13,'SLING','#b5fff0');
-          masteryTelemetry.emit('gravity-sling',{
-            field:S.zoomStage,turnDeg:Math.round(impulse.radians*180/Math.PI),
-            distancePx:Math.round(Math.sqrt(nearMin)*scale)
-          },S.t);
-        }
+    const noHit=sweptCircleTOI(rx0,ry0,rx1,ry1,dangerRadius)<0;
+    const scale=Math.max(.28,S.cameraScale);
+    const nearDistance=Math.sqrt(nearMin)*scale;
+    // Gravity is evaluated on EVERY safe close frame. Never gate on m.near;
+    // a near miss can be registered long before the user's steering gesture.
+    if(!m.gravityCharged && noHit && S.breakoutSafety<=0 && S.dashT<=0 &&
+       nearDistance<nearRadius()*scale+17){
+      const impulse=masteryGravityImpulse(m.angle,S.gravityGestureX,
+        S.gravityGestureY,nearDistance,dangerRadius*scale,
+        nearRadius()*scale+17,S.t-S.gravityGestureAt,
+        Math.atan2(m.y-player.y,m.x-player.x));
+      if(impulse){
+        m.gravityCharged=true;
+        m.gravityHeading=impulse.heading;
+        m.gravityHold=impulse.hold;
+        m.angle=impulse.heading;
+        S.gravitySlingshots++;
+        S.score+=90*Math.min(4,S.combo);
+        burst(m.x,m.y,6,'#95ffe2',.32);
+        masteryTelemetry.emit('gravity-sling',{
+          field:S.zoomStage,turnDeg:Math.round(impulse.radians*180/Math.PI),
+          distancePx:Math.round(nearDistance)
+        },S.t);
       }
+    }
+    if(!m.near && noHit &&
+       nearMin<nearRadius()*nearRadius() &&
+       nearMin>Math.pow(dangerRadius+4/scale,2)){
+      m.near=true;S.near++;
       // Near misses teach spatial confidence; Judo is the real score engine.
       rewardSkill(.22,.075,1.15);
       S.score+=50*Math.min(4,S.combo);
@@ -3795,7 +3801,8 @@ function update(dt){
       S.nearSlow=Math.max(S.nearSlow,.030);
       S.nearFlash=1;
       S.shake=Math.max(S.shake,.85+S.flow*.65);
-      floatText(player.x,player.y-23,'NEAR MISS',`hsl(${190+S.flow*115} 100% 86%)`);
+
+
       sfxFlyby(Math.min(2.2,m.speed*S.cameraScale/260));
       sfxNear();
       musicalSkillHit('near',1);
