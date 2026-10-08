@@ -1227,7 +1227,7 @@ if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
     },
     // DEV-only integration fixture: the next live update simulates a real
     // safe flyby after a downward/upward gesture; no public controls added.
-    armGravityFixture:(direction=1)=>{
+    armGravityFixture:(direction=1,syntheticGesture=true)=>{
       if(!S.running){
         reset();S.running=true;S.deathMode=false;
         overlay.style.display='none';app.classList.remove('prelaunch');
@@ -1241,13 +1241,14 @@ if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
       S.playerFrameX=player.x;S.playerFrameY=player.y;
       spawnMissile({type:'basic',speedMul:.3});
       const m=S.missiles[0];
-      m.x=player.x+36;m.y=player.y;
+      m.x=player.x+(syntheticGesture?36:48);m.y=player.y;
       m.angle=Math.PI;m.speed=90;m.turn=0;m.age=.5;
       m.near=false;m.gravityCharged=false;m.gravityFixture=true;
       m.gravityInitialAngle=Math.PI;
       S.gravityGestureX=0;
-      S.gravityGestureY=direction>=0?45:-45;
-      S.gravityGestureAt=S.t;S.recentMoveAt=S.t;
+      S.gravityGestureY=syntheticGesture?(direction>=0?45:-45):0;
+      S.gravityGestureAt=syntheticGesture?S.t:-99;
+      S.recentMoveAt=syntheticGesture?S.t:-99;
       return true;
     },
     gravityFixtureSnapshot:()=>{
