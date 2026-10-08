@@ -1244,6 +1244,7 @@ if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
       m.x=player.x+36;m.y=player.y;
       m.angle=Math.PI;m.speed=90;m.turn=0;m.age=.5;
       m.near=false;m.gravityCharged=false;m.gravityFixture=true;
+      m.gravityInitialAngle=Math.PI;
       S.gravityGestureX=0;
       S.gravityGestureY=direction>=0?45:-45;
       S.gravityGestureAt=S.t;S.recentMoveAt=S.t;
@@ -1251,7 +1252,7 @@ if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
     },
     gravityFixtureSnapshot:()=>{
       const m=S.missiles.find(v=>v.gravityFixture);
-      return m?{x:m.x,y:m.y,angle:m.angle,speed:m.speed,
+      return m?{x:m.x,y:m.y,angle:m.angle,initialAngle:m.gravityInitialAngle,speed:m.speed,
         charged:m.gravityCharged,hold:m.gravityHold,
         playerX:player.x,playerY:player.y}:null;
     },
