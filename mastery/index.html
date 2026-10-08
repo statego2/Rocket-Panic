@@ -1241,13 +1241,19 @@ if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
       S.playerFrameX=player.x;S.playerFrameY=player.y;
       spawnMissile({type:'basic',speedMul:.3});
       const m=S.missiles[0];
-      m.x=player.x+26;m.y=player.y;
-      m.angle=0;m.speed=25;m.turn=0;m.age=.5;
-      m.near=false;m.gravityCharged=false;
+      m.x=player.x+36;m.y=player.y;
+      m.angle=Math.PI;m.speed=90;m.turn=0;m.age=.5;
+      m.near=false;m.gravityCharged=false;m.gravityFixture=true;
       S.gravityGestureX=0;
       S.gravityGestureY=direction>=0?45:-45;
       S.gravityGestureAt=S.t;S.recentMoveAt=S.t;
       return true;
+    },
+    gravityFixtureSnapshot:()=>{
+      const m=S.missiles.find(v=>v.gravityFixture);
+      return m?{x:m.x,y:m.y,angle:m.angle,speed:m.speed,
+        charged:m.gravityCharged,hold:m.gravityHold,
+        playerX:player.x,playerY:player.y}:null;
     },
     seed:Number.isInteger(masteryDevSeed)?masteryDevSeed:null
   });
@@ -3114,9 +3120,6 @@ function explosionBloom(x,y,color,power=1){
   });
 }
 
-function floatText(x,y,text,color='#fff'){
-  S.particles.push({text,x,y,vy:-30,life:.5,max:.5,color});
-}
 // RELATIVE TOUCH CONTROL
 // ----------------------
 // The ship moves by the SAME relative displacement as the primary finger.
@@ -3847,8 +3850,7 @@ function update(dt){
 
   for(const p of S.particles){
     p.life-=dt;
-    if(p.text)p.y+=p.vy*dt;
-    else if(p.bloom){
+    if(p.bloom){
       // Screen-space light bloom: intentionally stationary and very short lived.
     }else{
       p.x+=p.vx*dt;p.y+=p.vy*dt;
@@ -4810,15 +4812,7 @@ function draw(){
     const pa=Math.max(0,p.life/(p.max||.68));
     ctx.globalAlpha=Math.min(1,pa);
 
-    if(p.text){
-      ctx.fillStyle=p.color;
-      ctx.font='900 9px ui-monospace,monospace';
-      ctx.textAlign='center';
-      ctx.shadowBlur=6;
-      ctx.shadowColor=p.color;
-      ctx.fillText(p.text,p.x,p.y);
-
-    }else if(p.bloom){
+    if(p.bloom){
       // Large, short-lived colour wash. Radius is screen-space compensated.
       const r=(p.radius||90)/Math.max(.28,S.cameraScale);
       const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r);
