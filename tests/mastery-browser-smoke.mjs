@@ -44,11 +44,18 @@ assert.ok(events5.some(e=>e.type==='field-enter'&&e.field===4));
 assert.ok(events5.some(e=>e.type==='orbit-phrase'));
 assert.equal(await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.armGravityFixture(1)),
   true,'Live slingshot integration fixture armed');
+const before=await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.gravityFixtureSnapshot());
+assert.ok(before,'An actual approaching rocket is present in the live game');
+assert.ok(Math.abs(before.angle-Math.PI)<.01,'Rocket initially approaches the pilot');
 await page.waitForTimeout(500);
 const gravity=await page.evaluate(()=>
   window.__ROCKET_MASTERY_QA__?.getEvents().filter(e=>e.type==='gravity-sling'));
+const after=await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.gravityFixtureSnapshot());
 assert.ok(gravity?.length>=1,'A genuine close pass must redirect the live missile');
-assert.ok(gravity.some(e=>e.turnDeg>0),'Downward lateral swipe must bend it down');
+assert.ok(after?.charged,'Actual missile physics received the slingshot');
+assert.ok(after.y-before.y>25,'Real rocket moves visibly downward after downward swipe');
+assert.ok(Math.cos(after.angle)>0,'Actual trajectory must point away from the pilot');
+assert.ok(gravity.some(e=>Math.abs(e.turnDeg)>60),'Deflection must be stronger than 60 degrees');
 assert.equal(await page.locator('#flightCue').count(),0,'No stage banner overlay');
 assert.equal(await page.locator('#stage').innerText(),'FIELD I',
   'Bare field indicator has no extra textual announcements');
