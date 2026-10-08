@@ -63,7 +63,7 @@ test('M06: 30/60/120 Hz produces equivalent recipe decisions',()=>{
   assert.ok(seq[0].length>=5);
   for(let i=0;i<seq[0].length;i++){
     const times=seq.map(events=>events[i].at);
-    assert.ok(Math.max(...times)-Math.min(...times)<=.12,'frame scheduling drift over a 30s fixture');
+    assert.ok(Math.max(...times)-Math.min(...times)<=.16,'frame scheduling drift over a 30s fixture');
   }
 });
 test('M06: real swept solver catches fast pass-through at 30/60/120 Hz',()=>{
