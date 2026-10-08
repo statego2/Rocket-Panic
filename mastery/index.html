@@ -1169,6 +1169,31 @@ const encounterRandom=Number.isInteger(masteryDevSeed)&&
   masteryDevSeed>=0&&masteryDevSeed<=0xffffffff
   ?createMasteryEncounterRng(masteryDevSeed):Math.random;
 
+// M06: ephemeral, bounded gameplay diagnostics. Disabled for every normal run.
+// No identifiers, network calls, storage writes, or remote telemetry.
+function createMasteryTelemetry(limit=256,enabled=false){
+  const records=[];
+  const cap=Math.max(1,Math.min(1024,Math.floor(limit)||256));
+  return {
+    emit(type,payload={},time=0){
+      if(!enabled)return;
+      records.push({...payload,type,time:Number.isFinite(time)?Math.round(time*1000)/1000:0});
+      if(records.length>cap)records.splice(0,records.length-cap);
+    },
+    snapshot(){return records.map(event=>({...event}))},
+    clear(){records.length=0}
+  };
+}
+const masteryTelemetry=createMasteryTelemetry(256,
+  window.__ROCKET_MASTERY_DEV_TELEMETRY__===true);
+if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
+  window.__ROCKET_MASTERY_QA__=Object.freeze({
+    getEvents:()=>masteryTelemetry.snapshot(),
+    clearEvents:()=>masteryTelemetry.clear(),
+    seed:Number.isInteger(masteryDevSeed)?masteryDevSeed:null
+  });
+}
+
 const S={
   running:false,t:0,score:0,combo:1,comboHold:0,near:0,
   cleanTime:0,skillHeat:0,flow:0,
@@ -2195,6 +2220,7 @@ function hud(){
 }
 
 function reset(){
+  masteryTelemetry.clear();
   Object.assign(S,{
     t:0,score:0,combo:1,comboHold:0,near:0,
   cleanTime:0,skillHeat:0,flow:0,
@@ -2272,6 +2298,7 @@ function start(){
   menuMusicActive=false;
   reset();
   S.running=true;
+  masteryTelemetry.emit('run-start',{field:0},0);
   app.classList.remove('prelaunch');
   if(soundEnabled)sfxLaunch();
   overlay.style.display='none';
@@ -2342,6 +2369,11 @@ function gameOver(){
   S.deathStage=S.zoomStage;
   S.deathScore=Math.floor(S.score);
   S.deathTime=S.t;
+  masteryTelemetry.emit('death',{
+    field:S.zoomStage,score:S.deathScore,
+    nearbyPairs:S.collisions.steered,passivePairs:S.collisions.passive,
+    dashBreaks:S.collisions.dash
+  },S.t);
   S.deathSpawnBank=0;
   // Lightweight QA diagnostics for distinguishing steered from passive chains.
   console.info('Rocket Panic run interactions',{
@@ -3183,6 +3215,11 @@ function resolveCombatCollisions(px0,py0){
       const playerAtY=py0+(player.y-py0)*e.t;
       const screenDist=Math.hypot(x-playerAtX,y-playerAtY)*scale;
       const steered=screenDist<220&&(m.near||n.near);
+      // "Nearby" is an observed proximity heuristic, not proof of player intent.
+      masteryTelemetry.emit('missile-pair',{
+        field:S.zoomStage,proximity:steered?'nearby':'passive',
+        distancePx:Math.round(screenDist)
+      },S.t);
       if(steered){
         S.collisions.steered++;
         rewardSkill(.36,.16,1.82);
@@ -3259,6 +3296,7 @@ function update(dt){
   const wantedStage=zoomStageForTime(S.t);
   if(wantedStage!==S.zoomStage){
     S.zoomStage=wantedStage;
+    masteryTelemetry.emit('field-enter',{field:wantedStage},S.t);
     S.zoomFrom=S.cameraScale;
     S.zoomTo=zoomForStage(wantedStage);
     S.zoomTransition=0;
