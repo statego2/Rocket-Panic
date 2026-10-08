@@ -46,7 +46,8 @@ assert.equal(await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.armGravityFix
   true,'Live slingshot integration fixture armed');
 const before=await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.gravityFixtureSnapshot());
 assert.ok(before,'An actual approaching rocket is present in the live game');
-assert.ok(Math.abs(before.angle-Math.PI)<.01,'Rocket initially approaches the pilot');
+assert.ok(Math.abs(before.initialAngle-Math.PI)<.01,
+  'Fixture's real missile was initialized facing the pilot');
 await page.waitForTimeout(500);
 const gravity=await page.evaluate(()=>
   window.__ROCKET_MASTERY_QA__?.getEvents().filter(e=>e.type==='gravity-sling'));
