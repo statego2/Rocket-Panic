@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Rocket Panic">
-<title>ROCKET PANIC V22</title>
+<title>ROCKET PANIC</title>
 <style>
 :root{
   --cyan:#43f5ff;
@@ -731,6 +731,14 @@ button{
   text-align:center;color:white;background:#080a22;padding:30px;
 }
 @media(orientation:landscape){#landscape{display:flex}}
+/* Mastery-only cinematic cues. Never block touches. */
+#skillHud{font-size:8px;letter-spacing:.14em;color:#ffd7a5;opacity:0;
+  margin-top:4px;text-shadow:0 0 12px rgba(255,168,90,.4);
+  transition:opacity .24s ease}
+#masteryResult{display:none;margin:6px 0 10px;font-size:9px;letter-spacing:.08em;
+  color:#bdf9ff;text-align:center;line-height:1.5}
+#overlay.death #masteryResult{display:block}
+@media (prefers-reduced-motion:reduce){#skillHud{transition:none}}
 </style>
 </head>
 <body>
@@ -755,9 +763,10 @@ button{
   <div id="combo">×1.0</div>
   <div id="time">0.0s</div>
   <div id="stage">FIELD I</div>
+  <div id="skillHud">JUDO 0 · BEST CHAIN ×1</div>
 </div>
 
-<div id="hint">SURVIVE DEEP ORBIT</div>
+<div id="hint">BAIT · CROSS · BREAK ORBIT</div>
 
 <div id="overlay" class="start-menu">
   <div class="panel">
@@ -767,11 +776,11 @@ button{
     </div>
 
     <div class="launch-hero">
-      <div class="launch-only launch-kicker">DEEP ORBIT SURVIVAL</div>
+      <div class="launch-only launch-kicker">ROCKET PANIC // LAUNCH</div>
       <h1 id="overlayTitle">ROCKET <span>PANIC</span></h1>
-      <div class="sub" id="overlaySub">ONE RUN // FIVE FIELDS // NO BRAKES</div>
+      <div class="sub" id="overlaySub">USE THEIR MOMENTUM // RULE THE CHAOS</div>
       <div class="desc" id="overlayDesc">
-        Climb through <b>five escalating flight zones</b> while the sky fills with hunters. Survive long enough to leave the world behind.
+        <b>Bait pursuing rockets into each other.</b> Master five flight fields, choreograph collisions, and survive the infinite orbit.
       </div>
     </div>
 
@@ -784,6 +793,7 @@ button{
       <div class="card"><b id="fn">I</b><span>FIELD REACHED</span></div>
     </div>
 
+    <div id="masteryResult" aria-live="polite"></div>
     <div class="launch-only launch-console">
       <div class="route-head"><span>ASCENT ROUTE</span><strong>FIELD I → V</strong></div>
       <div class="field-route">
@@ -808,7 +818,7 @@ button{
 
       <button id="start">BEGIN ASCENT</button>
       <button id="soundToggle">SOUND // ON</button>
-      <div class="launch-footer">SURVIVE // CLIMB // BREAK ORBIT</div>
+      <div class="launch-footer">DODGE // BAIT // CROSS // ASCEND</div>
     </div>
 
   </div>
@@ -1133,6 +1143,8 @@ const scoreEl=document.getElementById('score');
 const comboEl=document.getElementById('combo');
 const timeEl=document.getElementById('time');
 const stageEl=document.getElementById('stage');
+const skillHudEl=document.getElementById('skillHud');
+const masteryResultEl=document.getElementById('masteryResult');
 const healthEl=document.getElementById('health');
 const overlay=document.getElementById('overlay');
 const overlayTitle=document.getElementById('overlayTitle');
@@ -1150,13 +1162,103 @@ const menuBest=document.getElementById('menuBest');
 const TAU=Math.PI*2;
 let W=0,H=0,DPR=1,last=performance.now();
 
+// M05: isolated, opt-in deterministic encounter stream for QA replays.
+// Normal play still calls Math.random with its existing probability model;
+// explosions, music and cosmetics never consume the encounter test sequence.
+// A dev harness can set this property BEFORE the script starts.
+function createMasteryEncounterRng(seed){
+  let state=seed>>>0;
+  return function nextEncounterRandom(){
+    state=(state+0x6D2B79F5)>>>0;
+    let t=state;
+    t=Math.imul(t^(t>>>15),t|1);
+    t^=t+Math.imul(t^(t>>>7),t|61);
+    return ((t^(t>>>14))>>>0)/4294967296;
+  };
+}
+const masteryDevSeed=window.__ROCKET_MASTERY_DEV_SEED__;
+const encounterRandom=Number.isInteger(masteryDevSeed)&&
+  masteryDevSeed>=0&&masteryDevSeed<=0xffffffff
+  ?createMasteryEncounterRng(masteryDevSeed):Math.random;
+
+// M06: ephemeral, bounded gameplay diagnostics. Disabled for every normal run.
+// No identifiers, network calls, storage writes, or remote telemetry.
+function createMasteryTelemetry(limit=256,enabled=false){
+  const records=[];
+  const cap=Math.max(1,Math.min(1024,Math.floor(limit)||256));
+  return {
+    emit(type,payload={},time=0){
+      if(!enabled)return;
+      records.push({...payload,type,time:Number.isFinite(time)?Math.round(time*1000)/1000:0});
+      if(records.length>cap)records.splice(0,records.length-cap);
+    },
+    snapshot(){return records.map(event=>({...event}))},
+    clear(){records.length=0}
+  };
+}
+const masteryTelemetry=createMasteryTelemetry(256,
+  window.__ROCKET_MASTERY_DEV_TELEMETRY__===true);
+if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
+  window.__ROCKET_MASTERY_QA__=Object.freeze({
+    getEvents:()=>masteryTelemetry.snapshot(),
+    clearEvents:()=>masteryTelemetry.clear(),
+    // DEV ONLY: jump to real stage transition for fast browser screenshot tests.
+    warpToField:(field)=>{
+      if(!Number.isInteger(field)||field<0||field>4)return false;
+      // The automated pilot might already have died in FIELD I. Reinitialize
+      // a fresh DEV run before examining a later actual rendering stage.
+      if(!S.running){
+        reset();
+        S.running=true;
+        S.deathMode=false;
+        overlay.style.display='none';
+        app.classList.remove('prelaunch');
+      }
+      const thresholds=[0,20,47,77,110];
+      S.t=Math.max(0,thresholds[field]-.015);
+      S.zoomStage=Math.max(0,field-1);
+      S.cameraScale=zoomForStage(S.zoomStage);
+      S.zoomTo=S.cameraScale;S.zoomTransition=1;
+      S.missiles.length=0;S.bullets.length=0;
+      S.patternQueue.length=0;S.spawnBank=0;S.bulletBank=0;
+      S.orbitMotif=-1;S.orbitRest=false;
+      S.invuln=2.0;
+      return true;
+    },
+    // QA-only live collision fixture: forces a fresh post-dash incoming threat.
+    armDashLandingFixture:()=>{
+      if(!S.running){
+        reset();S.running=true;S.deathMode=false;
+        overlay.style.display='none';app.classList.remove('prelaunch');
+      }
+      S.t=2;S.zoomStage=0;S.stageAge=2;
+      S.zoomFrom=1;S.cameraScale=1;S.zoomTo=1;S.zoomTransition=1;
+      S.breakoutSafety=0;S.invuln=0;S.dashCd=0;S.dashT=0;S.dashGuard=0;
+      S.missiles.length=0;S.bullets.length=0;S.patternQueue.length=0;
+      S.spawnBank=0;S.bulletBank=0;S.nextPattern=999;
+      player.hp=3;
+      dash();
+      spawnMissile({type:'basic',speedMul:.1});
+      const m=S.missiles[S.missiles.length-1];
+      m.x=player.x+22;m.y=player.y;m.angle=Math.PI;
+      m.speed=160;m.turn=0;m.age=.45;
+      return true;
+    },
+    dashGuardSnapshot:()=>({
+      hp:player.hp,guard:S.dashGuard,active:S.dashT,
+      incoming:S.missiles.filter(m=>!m.dead).length
+    }),
+    seed:Number.isInteger(masteryDevSeed)?masteryDevSeed:null
+  });
+}
+
 const S={
   running:false,t:0,score:0,combo:1,comboHold:0,near:0,
   cleanTime:0,skillHeat:0,flow:0,
   patternQueue:[],patternDelay:0,nextPattern:4.8,lastPattern:-1,
   missiles:[],bullets:[],particles:[],spawnBank:0,bulletBank:0,
   shake:0,damageFlash:0,deathFlash:0,whiteFlash:0,nearFlash:0,nearSlow:0,
-  dashCd:0,dashT:0,invuln:0,
+  dashCd:0,dashT:0,dashGuard:0,dashGuardFrameActive:false,invuln:0,
   shieldRegenDelay:0,
   shieldRegenProgress:0,
   cameraScale:1,
@@ -1185,7 +1287,11 @@ const S={
   deathSpawnBank:0,
   shockwaves:[],
   playerFrameX:0,playerFrameY:0,
-  collisions:{steered:0,passive:0,dash:0}
+  collisions:{steered:0,passive:0,dash:0},
+  judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
+      recentMoveAt:-99,inputTravel:0,
+  orbitMotif:-1,orbitRest:false,
+  balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
 };
 
 const player={
@@ -1205,6 +1311,48 @@ const control={
   speedX:0,speedY:0
 };
 
+
+// Published Mastery gameplay rules — Classic is retained in a backup branch.
+const MASTERY_ORBIT_MOTIFS=[
+  {title:'PURSUIT SPIRAL',short:'SPIRAL',color:'#71fcff'},
+  {title:'LANCE CORRIDOR',short:'CORRIDOR',color:'#ffcf80'},
+  {title:'ORBITAL CROSSFIRE',short:'CROSSFIRE',color:'#eeb3ff'}
+];
+// 18-second readable musical phrases: ~14 seconds challenge, 4 seconds relief.
+// Different recipes provide different spatial decisions, not just different speed.
+function masteryOrbitState(age){
+  const a=Math.max(0,age);
+  const phase=a%54;
+  const index=Math.min(2,Math.floor(phase/18));
+  const within=phase-index*18;
+  return {index,rest:within>=14,within,cycle:Math.floor(a/54)};
+}
+function updateMasteryOrbit(){
+  if(S.zoomStage!==4)return;
+  const state=masteryOrbitState(S.stageAge);
+  if(state.index!==S.orbitMotif || state.rest!==S.orbitRest){
+    const newPhrase=state.index!==S.orbitMotif;
+    S.orbitMotif=state.index;
+    S.orbitRest=state.rest;
+    S.patternQueue.length=0; S.patternDelay=0;
+    S.nextPattern=state.rest?4.0:Math.min(S.nextPattern,1.5);
+    masteryTelemetry.emit('orbit-phrase',{
+      motif:state.index,rest:state.rest,cycle:state.cycle
+    },S.t);
+  }
+}
+function masteryJudoClassification(m,n,distancePx,inputTravel,recentMoveAge,age){
+  // Heuristic local causal evidence, not a claim of exact counterfactual causality.
+  // A stationary pilot or an offscreen impact cannot score as intentional Judo.
+  const paired=m.pairTag!=null && m.pairTag===n.pairTag;
+  const moved=Math.max(inputTravel-(m.aimTravel||0),inputTravel-(n.aimTravel||0));
+  const fresh=recentMoveAge<1.55&&recentMoveAge>=0;
+  const local=distancePx<195;
+  const earned=fresh&&local&&moved>=26&&
+    (paired || (m.near||n.near)) &&
+    (m.age>.38||n.age>.38);
+  return {earned,paired,moved,local};
+}
 
 let soundEnabled=true;
 let menuMusicActive=false;
@@ -2067,10 +2215,15 @@ function musicalSkillHit(kind,strength=1){
       attack:.002,release:.045,reverb:.22,pan:(Math.random()*2-1)*.20
     });
   }else if(kind==='collision'){
+    // Actual close-time missile collisions unlock a gentle musical harmony.
     kick(now,.014+flow*.011,1.025);
     musicVoice(freq,now+.008,.105,.0030+flow*.0038,'triangle',1600,{
       attack:.003,release:.070,reverb:.24
     });
+    if(strength>1.12){
+      musicVoice(freq*1.5,now+.060,.20,.0026*Math.min(1.6,strength),
+        'sine',2900,{attack:.008,release:.15,reverb:.34});
+    }
   }else if(kind==='dashKill'){
     tom(now,.011+flow*.009,112+flow*18);
     musicVoice(freq*2,now+.010,.090,.0032+flow*.0044,'sine',3600,{
@@ -2165,6 +2318,8 @@ function hud(){
   comboEl.style.textShadow=`0 0 ${12+flow*16}px hsla(${hue} 100% 65% / ${.38+flow*.36})`;
   timeEl.textContent=S.t.toFixed(1)+'s';
   stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0];
+  skillHudEl.textContent='JUDO '+S.judoCount+' · CHAIN ×'+Math.max(1,S.judoPeak);
+  skillHudEl.style.opacity=S.judoCount>0?'1':'0';
   [...healthEl.children].forEach((e,i)=>{
     e.classList.toggle('off',i>=player.hp);
     if(i===player.hp && player.hp<3 && S.shieldRegenDelay<=0){
@@ -2176,13 +2331,14 @@ function hud(){
 }
 
 function reset(){
+  masteryTelemetry.clear();
   Object.assign(S,{
     t:0,score:0,combo:1,comboHold:0,near:0,
   cleanTime:0,skillHeat:0,flow:0,
   patternQueue:[],patternDelay:0,nextPattern:4.8,lastPattern:-1,
     missiles:[],bullets:[],particles:[],spawnBank:0,bulletBank:0,
     shake:0,damageFlash:0,deathFlash:0,whiteFlash:0,nearFlash:0,nearSlow:0,
-    dashCd:0,dashT:0,invuln:0,
+    dashCd:0,dashT:0,dashGuard:0,dashGuardFrameActive:false,invuln:0,
     shieldRegenDelay:0,
     shieldRegenProgress:0,
     cameraScale:1,
@@ -2210,7 +2366,11 @@ function reset(){
     deathTime:0,
     deathSpawnBank:0,
     shockwaves:[],
-    collisions:{steered:0,passive:0,dash:0}
+    collisions:{steered:0,passive:0,dash:0},
+    judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
+        recentMoveAt:-99,inputTravel:0,
+    orbitMotif:-1,orbitRest:false,
+    balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
   });
   player.x=W*.5;player.y=H*.42;player.vx=player.speed*.7;player.vy=0;
   S.playerFrameX=player.x;S.playerFrameY=player.y;
@@ -2220,14 +2380,16 @@ function reset(){
   musicTension=0;
   audioStage=-1;
   skillPercLast=-99;
+  skillHudEl.style.opacity='0';
+  masteryResultEl.textContent='';
   app.classList.remove('death');
   overlay.classList.remove('death');
   overlay.classList.remove('new-best');
   overlay.style.removeProperty('--death-accent-rgb');
   overlay.classList.add('start-menu');
   overlayTitle.innerHTML='ROCKET <span>PANIC</span>';
-  overlaySub.textContent='ONE RUN // FIVE FIELDS // NO BRAKES';
-  overlayDesc.innerHTML='Climb through <b>five escalating flight zones</b> while the sky fills with hunters. Survive long enough to leave the world behind.';
+  overlaySub.textContent='USE THEIR MOMENTUM // RULE THE CHAOS';
+  overlayDesc.innerHTML='<b>Bait pursuing rockets into each other.</b> Master five flight fields, choreograph collisions, and survive the infinite orbit.';
   statsEl.style.display='none';
   startEl.textContent='BEGIN ASCENT';
   const storedBest=+(localStorage.getItem('rocketPanicV22Best')||0);
@@ -2253,6 +2415,7 @@ function start(){
   menuMusicActive=false;
   reset();
   S.running=true;
+  masteryTelemetry.emit('run-start',{field:0},0);
   app.classList.remove('prelaunch');
   if(soundEnabled)sfxLaunch();
   overlay.style.display='none';
@@ -2323,6 +2486,11 @@ function gameOver(){
   S.deathStage=S.zoomStage;
   S.deathScore=Math.floor(S.score);
   S.deathTime=S.t;
+  masteryTelemetry.emit('death',{
+    field:S.zoomStage,score:S.deathScore,
+    nearbyPairs:S.collisions.steered,passivePairs:S.collisions.passive,
+    dashBreaks:S.collisions.dash
+  },S.t);
   S.deathSpawnBank=0;
   // Lightweight QA diagnostics for distinguishing steered from passive chains.
   console.info('Rocket Panic run interactions',{
@@ -2431,9 +2599,7 @@ function updateDeathScene(dt){
 
   for(const p of S.particles){
     p.life-=dt;
-    if(p.text){
-      p.y+=p.vy*slowDt;
-    }else if(!p.bloom){
+    if(!p.bloom){
       p.x+=p.vx*slowDt;
       p.y+=p.vy*slowDt;
       p.vx*=Math.pow(.18,slowDt);
@@ -2485,6 +2651,8 @@ function updateDeathScene(dt){
     overlayDesc.textContent=lines[S.deathStage]||lines[0];
 
     statsEl.style.display='grid';
+    masteryResultEl.textContent=S.judoCount+
+      ' JUDO CROSSOVERS  ·  PEAK CHAIN ×'+Math.max(1,S.judoPeak);
     startEl.textContent='RE-LAUNCH';
     if(menuBest)menuBest.textContent=Math.floor(best).toString().padStart(6,'0');
     overlay.classList.add('death');
@@ -2614,12 +2782,12 @@ function perimeterSpawnPoint(margin,forcedAngle=null){
   const hw=(b.right-b.left)*.5 + margin;
   const hh=(b.bottom-b.top)*.5 + margin;
 
-  let a=forcedAngle==null ? Math.random()*TAU : ((forcedAngle%TAU)+TAU)%TAU;
+  let a=forcedAngle==null ? encounterRandom()*TAU : ((forcedAngle%TAU)+TAU)%TAU;
 
   // Ambient spawns avoid repeatedly attacking from the same bearing.
   // Pattern spawns intentionally keep their authored geometry.
-  if(forcedAngle==null && S.zoomStage>=2 && angleDistance(a,S.lastSpawnAngle)<.55 && Math.random()<.78){
-    a=(a + .75 + Math.random()*1.35) % TAU;
+  if(forcedAngle==null && S.zoomStage>=2 && angleDistance(a,S.lastSpawnAngle)<.55 && encounterRandom()<.78){
+    a=(a + .75 + encounterRandom()*1.35) % TAU;
   }
   if(forcedAngle==null)S.lastSpawnAngle=a;
 
@@ -2644,7 +2812,7 @@ function spawnMissile(opts={}){
   const x=s.x,y=s.y;
 
   const flavour=S.zoomStage===4?Math.floor(Math.max(0,S.t-110)/6)%3:-1;
-  const q=Math.random();
+  const q=encounterRandom();
   let type=opts.type||'basic';
 
   if(!opts.type){
@@ -2669,7 +2837,7 @@ function spawnMissile(opts={}){
   const zoomComp=zoomSpeedCompensation();
   let speed=d.speed*style.speed*zoomComp*(opts.speedMul==null?1:opts.speedMul);
   let turn=d.turn*style.turn*(opts.turnMul==null?1:opts.turnMul);
-  const color=opts.color||style.color||(Math.random()<.52?'#ff4fc8':'#ff657d');
+  const color=opts.color||style.color||(encounterRandom()<.52?'#ff4fc8':'#ff657d');
   const r=style.r;
 
   let leadTime=.20;
@@ -2693,18 +2861,22 @@ function spawnMissile(opts={}){
   S.missiles.push({
     x,y,angle,speed,turn,color,r,type,
     age:0,near:false,dead:false,trail:[],
-    phase:Math.random()*TAU,
-    bias:(Math.random()<.5?-1:1)*(.42+Math.random()*.28),
+    // Encounter membership and the actual amount of pilot displacement
+    // since this particular projectile acquired its initial heading.
+    pairTag:opts.pairTag==null?null:opts.pairTag,
+    aimTravel:S.inputTravel,
+    phase:encounterRandom()*TAU,
+    bias:(encounterRandom()<.5?-1:1)*(.42+encounterRandom()*.28),
     leadTime,
     retarget:
-      type==='predictor'?(.32+Math.random()*.13):
-      type==='tracker'?(.11+Math.random()*.06):
-      type==='dart'?(.58+Math.random()*.22):
+      type==='predictor'?(.32+encounterRandom()*.13):
+      type==='tracker'?(.11+encounterRandom()*.06):
+      type==='dart'?(.58+encounterRandom()*.22):
       .28,
     targetX,targetY,
-    armTime:.18+Math.random()*.14,
+    armTime:.18+encounterRandom()*.14,
     commitTime:
-      type==='interceptor'?(.92+Math.random()*.30):
+      type==='interceptor'?(.92+encounterRandom()*.30):
       type==='lance' ? .14 :
       99,
     maxAge:(
@@ -2713,16 +2885,16 @@ function spawnMissile(opts={}){
       type==='dart'?4.2:
       type==='tracker'?6.2:
       type==='predictor'?5.4:
-      5.5+Math.random()*1.4
+      5.5+encounterRandom()*1.4
     )*lateLife*(opts.maxAgeMul==null?1:opts.maxAgeMul)
   });
 }
 
 function beginThreatPattern(){
   const stage=S.zoomStage;
-  if(stage<1||S.patternQueue.length||S.breakoutSafety>0)return false;
+  if(S.patternQueue.length||S.breakoutSafety>0)return false;
 
-  const base=Math.random()*TAU;
+  const base=encounterRandom()*TAU;
   const pincer=[
     {gap:.08,spawnAngle:base,type:stage>=2?'hook':'basic',speedMul:.93},
     {gap:.16,spawnAngle:base+Math.PI,type:'basic',speedMul:.98}
@@ -2753,8 +2925,54 @@ function beginThreatPattern(){
     {gap:.20,spawnAngle:base+Math.PI+.30,type:'interceptor',speedMul:.91,turnMul:.82,targetOffsetX:42,targetOffsetY:22}
   ];
 
-  const recipes=stage===1?[pincer,swarm]:[pincer,swarm,chase,cross,gap];
-  let pick=(Math.random()*recipes.length)|0;
+  // Ballet opportunities: committed converging approaches with enough room to
+  // dodge through. Intentional pursuer pairing is a genuine mechanic, not FX.
+  const tag=(S.patternSerial||0)+1;
+  S.patternSerial=tag;
+  const balletArc=[
+    {gap:.16,spawnAngle:base-.85,type:stage<2?'basic':'hook',speedMul:.78,turnMul:.80,pairTag:tag},
+    {gap:.22,spawnAngle:base+.85,type:stage<2?'basic':'hook',speedMul:.81,turnMul:.77,pairTag:tag}
+  ];
+  const knifeThread=[
+    {gap:.12,spawnAngle:base,type:'interceptor',speedMul:.88,turnMul:.67,
+      targetOffsetX:-56,targetOffsetY:-42,pairTag:tag},
+    {gap:.19,spawnAngle:base+Math.PI,type:'interceptor',speedMul:.89,turnMul:.67,
+      targetOffsetX:56,targetOffsetY:42,pairTag:tag}
+  ];
+  const crossRelease=[
+    {gap:.14,spawnAngle:base-.32,type:'predictor',speedMul:.90,turnMul:.78,
+      targetOffsetX:35,pairTag:tag},
+    {gap:.24,spawnAngle:base+Math.PI+.20,type:'dart',speedMul:.90,turnMul:.80,
+      targetOffsetX:-35,pairTag:tag}
+  ];
+  const early=[balletArc,knifeThread];
+  const mid=[balletArc,knifeThread,crossRelease,pincer,gap];
+  const orbit=S.orbitMotif==null?0:S.orbitMotif;
+  const spiral=[
+    {gap:.15,spawnAngle:base-.68,type:'tracker',speedMul:.83,turnMul:.68,pairTag:tag},
+    {gap:.16,spawnAngle:base-.12,type:'hook',speedMul:.91,turnMul:.79,pairTag:tag},
+    {gap:.21,spawnAngle:base+.52,type:'tracker',speedMul:.82,turnMul:.72,pairTag:tag}
+  ];
+  const corridor=[
+    {gap:.12,spawnAngle:base,type:'interceptor',speedMul:.83,turnMul:.60,
+      targetOffsetY:-58,pairTag:tag},
+    {gap:.15,spawnAngle:base+Math.PI,type:'interceptor',speedMul:.83,turnMul:.60,
+      targetOffsetY:58,pairTag:tag},
+    {gap:.18,spawnAngle:base+Math.PI*.5,type:'lance',speedMul:.70,turnMul:.80,
+      targetOffsetX:58,pairTag:tag}
+  ];
+  const crossfire=[
+    {gap:.12,spawnAngle:base,type:'dart',speedMul:.86,turnMul:.58,pairTag:tag},
+    {gap:.17,spawnAngle:base+Math.PI,type:'predictor',speedMul:.81,turnMul:.70,
+      targetOffsetX:48,pairTag:tag},
+    {gap:.20,spawnAngle:base+Math.PI*.5,type:'interceptor',speedMul:.85,turnMul:.70,
+      targetOffsetY:-48,pairTag:tag},
+    {gap:.20,spawnAngle:base+Math.PI*1.5,type:'hook',speedMul:.83,turnMul:.76,pairTag:tag}
+  ];
+  const recipes=stage===0?[balletArc]:stage===1?early:stage<4?mid:
+    (orbit===0?[spiral,balletArc]:
+     orbit===1?[corridor,knifeThread]:[crossfire,crossRelease]);
+  let pick=(encounterRandom()*recipes.length)|0;
   if(recipes.length>1 && pick===S.lastPattern)pick=(pick+1)%recipes.length;
   S.lastPattern=pick;
   S.patternQueue=recipes[pick].map(v=>({...v}));
@@ -2776,11 +2994,12 @@ function updatePatternDirector(dt,d){
   }
 
   S.nextPattern-=dt;
-  if(!busy && S.nextPattern<=0 && S.zoomStage>=1 && !d.breath &&
-     d.pressure>.84 && S.breakoutSafety<=0 &&
-     S.missiles.length<Math.min(d.cap-3,Math.max(4,d.cap*.58))){
+  if(!busy && S.nextPattern<=0 && S.t>7 && !S.orbitRest &&
+     !d.breath && d.pressure>.80 && S.breakoutSafety<=0 &&
+     S.missiles.length<Math.min(d.cap-2,Math.max(4,d.cap*.58))){
     busy=beginThreatPattern();
-    S.nextPattern=Math.max(4.0,6.9-S.zoomStage*.48)+Math.random()*1.6;
+    S.nextPattern=(S.zoomStage===4?4.0:Math.max(4.5,6.9-S.zoomStage*.48))+
+      encounterRandom()*1.6;
   }
 
   return busy;
@@ -2793,11 +3012,11 @@ function spawnBullet(){
 
   // Bullets are true aimed shots: usually some distance ahead of current movement.
   const deep=Math.max(0,S.t-145);
-  const lead=.34 + Math.min(.62,deep*.0035) + Math.random()*.18;
+  const lead=.34 + Math.min(.62,deep*.0035) + encounterRandom()*.18;
   const p=predictPlayer(lead);
 
   const angle=Math.atan2(p.y-s.y,p.x-s.x);
-  const screenSpeed=235 + Math.min(145,deep*.75) + Math.random()*35;
+  const screenSpeed=235 + Math.min(145,deep*.75) + encounterRandom()*35;
   const speed=screenSpeed/Math.max(.28,S.cameraScale);
 
   S.bullets.push({
@@ -2806,9 +3025,9 @@ function spawnBullet(){
     vy:Math.sin(angle)*speed,
     r:2.7/Math.max(.28,S.cameraScale),
     age:0,
-    maxAge:6.2+Math.random()*2.8,
+    maxAge:6.2+encounterRandom()*2.8,
     dead:false,
-    color:Math.random()<.72?'#f8fbff':'#7ef7ff'
+    color:encounterRandom()<.72?'#f8fbff':'#7ef7ff'
   });
 }
 
@@ -2860,9 +3079,6 @@ function explosionBloom(x,y,color,power=1){
   });
 }
 
-function floatText(x,y,text,color='#fff'){
-  S.particles.push({text,x,y,vy:-30,life:.5,max:.5,color});
-}
 // RELATIVE TOUCH CONTROL
 // ----------------------
 // The ship moves by the SAME relative displacement as the primary finger.
@@ -2896,6 +3112,9 @@ function applyRelativeMove(dx,dy,eventTime=performance.now()){
   const mag=Math.hypot(actualX,actualY);
 
   if(mag>0.1){
+    S.recentMoveAt=S.t;
+    const z=Math.max(.28,S.cameraScale);
+    S.inputTravel+=mag*z;
     control.moveX=actualX;
     control.moveY=actualY;
     control.desiredAngle=Math.atan2(actualY,actualX);
@@ -2913,6 +3132,24 @@ function applyRelativeMove(dx,dy,eventTime=performance.now()){
     if(player.trail.length>72)player.trail.shift();
   }
   control.lastEventTime=eventTime;
+}
+
+// Explicit pointer cleanup prevents stuck steering after iOS gesture cancellations,
+// lost capture, tab backgrounding and browser focus changes.
+function releaseSteering(){
+  const id=control.primaryId;
+  control.active=false;
+  control.primaryId=null;
+  control.moveX=0;
+  control.moveY=0;
+  control.speedX=0;
+  control.speedY=0;
+  control.lastEventTime=0;
+  player.vx=0;
+  player.vy=0;
+  if(id!=null){
+    try{canvas.releasePointerCapture?.(id)}catch(_err){/* capture already gone */}
+  }
 }
 
 function pointerDown(e){
@@ -2935,7 +3172,7 @@ function pointerDown(e){
     control.touchY=e.clientY;
     control.lastEventTime=e.timeStamp;
     control.speedX=0;control.speedY=0;
-    canvas.setPointerCapture?.(e.pointerId);
+    try{canvas.setPointerCapture?.(e.pointerId)}catch(_err){/* fallback to normal pointer events */}
     return;
   }
 
@@ -2948,7 +3185,10 @@ function pointerMove(e){
   if(!control.active || e.pointerId!==control.primaryId)return;
   e.preventDefault();
 
-  const events=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+  // Safari may return no samples; some engines omit the final dispatched
+  // pointer sample. Always include e to conserve the full finger displacement.
+  const coalesced=typeof e.getCoalescedEvents==='function'?e.getCoalescedEvents():null;
+  const events=coalesced?.length?[...coalesced,e]:[e];
 
   for(const p of events){
     const dx=p.clientX-control.lastX;
@@ -2966,27 +3206,30 @@ function pointerMove(e){
 function pointerUp(e){
   if(e.pointerId!==control.primaryId)return;
   e.preventDefault();
-
-  control.active=false;
-  control.primaryId=null;
-  control.moveX=0;
-  control.moveY=0;
-  control.speedX=0;
-  control.speedY=0;
-  player.vx=0;
-  player.vy=0;
+  releaseSteering();
 }
 
 canvas.addEventListener('pointerdown',pointerDown,{passive:false});
 canvas.addEventListener('pointermove',pointerMove,{passive:false});
 canvas.addEventListener('pointerup',pointerUp,{passive:false});
 canvas.addEventListener('pointercancel',pointerUp,{passive:false});
+canvas.addEventListener('lostpointercapture',e=>{
+  if(e.pointerId===control.primaryId)releaseSteering();
+});
+window.addEventListener('blur',releaseSteering);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)releaseSteering();
+});
 
 function dash(){
   if(!S.running||S.dashCd>0)return;
 
   S.dashCd=2.95;
   S.dashT=.14;
+  // Keep the pilot safe throughout dash plus 240 ms of landing grace.
+  // Real swept path hits still destroy the missiles intercepted by the dash.
+  S.dashGuard=.38;
+  S.dashGuardFrameActive=true;
 
   // Dash in the most recent movement direction.
   let dx=control.moveX,dy=control.moveY;
@@ -3043,7 +3286,8 @@ function dash(){
     rewardSkill(.48,.18,1.90);
     S.score+=260*S.combo;
     S.collisions.dash++;
-    floatText(x,y-18,'DASH BREAK','#bffcff');
+
+
     musicalSkillHit('dashKill',1);
   }
   // Crossing a bullet during a dash also consumes it without taking damage.
@@ -3105,6 +3349,9 @@ function segmentMinDistanceSq(x0,y0,x1,y1){
  * Resolve missile/missile, missile/player, and bullet/player events in their
  * true frame order. An impact before two missiles collide still counts.
  */
+function isPilotProtected(){
+  return S.dashT>0 || S.dashGuard>0 || S.dashGuardFrameActive || S.invuln>0;
+}
 function resolveCombatCollisions(px0,py0){
   const events=[],a=S.missiles;
   const scale=Math.max(.28,S.cameraScale);
@@ -3143,18 +3390,35 @@ function resolveCombatCollisions(px0,py0){
       const playerAtX=px0+(player.x-px0)*e.t;
       const playerAtY=py0+(player.y-py0)*e.t;
       const screenDist=Math.hypot(x-playerAtX,y-playerAtY)*scale;
-      const steered=screenDist<220&&(m.near||n.near);
-      if(steered){
+      const judo=masteryJudoClassification(m,n,screenDist,S.inputTravel,
+        S.t-S.recentMoveAt,S.t);
+      masteryTelemetry.emit('missile-pair',{
+        field:S.zoomStage,proximity:judo.local?'nearby':'passive',
+        distancePx:Math.round(screenDist),earned:judo.earned,
+        movedPx:Math.round(judo.moved),pair:judo.paired
+      },S.t);
+      if(judo.earned){
+        const chained=S.t-S.judoLastAt<=2.4;
+        S.judoChain=chained?Math.min(5,S.judoChain+1):1;
+        S.judoLastAt=S.t;
+        S.judoPeak=Math.max(S.judoPeak,S.judoChain);
+        S.judoCount++;
         S.collisions.steered++;
-        rewardSkill(.36,.16,1.82);
-        S.score+=210*S.combo;
-        musicalSkillHit('collision',1);
-        floatText(x,y-12,'CHAIN BOOM','#ffd0f2');
+        rewardSkill(.65,.24,2.1);
+        const awarded=(280+110*(S.judoChain-1))*Math.min(7,S.combo);
+        S.score+=awarded;
+        musicalSkillHit('collision',Math.min(1.7,.8+S.judoChain*.15));
+        if(S.judoChain>=2){
+          shockwave(x,y,'#ffe6b3',.48);
+        }
+
+
       }else{
         S.collisions.passive++;
-        S.score+=28;
+        // A passive world collision is pretty, not a mastery score farm.
+        S.score+=8;
       }
-      S.shake=Math.max(S.shake,steered?4.2:3.1);
+      S.shake=Math.max(S.shake,judo.earned?4.8:2.6);
     }else if(e.kind==='playerMissile'){
       const m=a[e.i];
       if(m.dead)continue;
@@ -3169,10 +3433,11 @@ function resolveCombatCollisions(px0,py0){
       if(S.dashT>0){
         rewardSkill(.48,.18,1.90);
         S.score+=260*S.combo;
-        floatText(player.x,player.y-18,'DASH BREAK','#bffcff');
+
+
         musicalSkillHit('dashKill',1);
         S.collisions.dash++;
-      }else if(S.invuln<=0){
+      }else if(!isPilotProtected()){
         player.hp--;
         S.invuln=.68;
         S.damageFlash=1;
@@ -3189,7 +3454,7 @@ function resolveCombatCollisions(px0,py0){
       const x=b.prevX+(b.x-b.prevX)*e.t;
       const y=b.prevY+(b.y-b.prevY)*e.t;
       burst(x,y,7,b.color,.45);
-      if(S.invuln<=0 && S.dashT<=0){
+      if(!isPilotProtected()){
         player.hp--;
         S.invuln=.64;
         S.damageFlash=1;
@@ -3220,6 +3485,7 @@ function update(dt){
   const wantedStage=zoomStageForTime(S.t);
   if(wantedStage!==S.zoomStage){
     S.zoomStage=wantedStage;
+    masteryTelemetry.emit('field-enter',{field:wantedStage},S.t);
     S.zoomFrom=S.cameraScale;
     S.zoomTo=zoomForStage(wantedStage);
     S.zoomTransition=0;
@@ -3266,6 +3532,9 @@ function update(dt){
 
   S.dashCd=Math.max(0,S.dashCd-dt);
   S.dashT=Math.max(0,S.dashT-dt);
+  // Evaluate contacts for the whole frame when protection expires mid-frame.
+  S.dashGuardFrameActive=S.dashGuard>0;
+  S.dashGuard=Math.max(0,S.dashGuard-dt);
   S.invuln=Math.max(0,S.invuln-dt);
   S.damageFlash=Math.max(0,S.damageFlash-dt*2.7);
   S.nearFlash=Math.max(0,S.nearFlash-dt*9.5);
@@ -3328,6 +3597,7 @@ function update(dt){
   for(const p of player.trail)p.life-=dt;
 
 
+  updateMasteryOrbit();
   const d=difficulty();
   updateAudio();
 
@@ -3339,8 +3609,9 @@ function update(dt){
   S.flavour=Math.floor(Math.max(0,S.t-110)/6)%3;
 
   const patternBusy=updatePatternDirector(worldDt,d);
-  // Let authored patterns read as patterns instead of burying them in ambient traffic.
-  S.spawnBank+=worldDt*d.rate*(patternBusy?.08:1);
+  // Real recovery: stop scheduling NEW ambient projectiles for four seconds
+  // of each orbit phrase. Existing threats retain their physically correct paths.
+  S.spawnBank+=worldDt*d.rate*(S.orbitRest?0:patternBusy?.06:1);
   while(S.spawnBank>=1&&S.missiles.length<d.cap){
     S.spawnBank-=1;
     spawnMissile();
@@ -3348,7 +3619,7 @@ function update(dt){
 
   // Deep FIELD V introduces a second, lightweight pressure layer.
   // It starts sparse and ramps continuously instead of appearing as a sudden wall.
-  if(S.zoomStage===4 && S.t>145){
+  if(S.zoomStage===4 && S.t>145 && !S.orbitRest){
     const deep=S.t-145;
     const bulletRate=Math.min(1.45,.18 + deep*.0085);
     const bulletCap=Math.min(24,5+Math.floor(deep/10));
@@ -3443,16 +3714,26 @@ function update(dt){
     const rx1=m.x-player.x,ry1=m.y-player.y;
     const dangerRadius=hitRadius()+enemyRadius(m)+1/Math.max(.28,S.cameraScale);
     const nearMin=segmentMinDistanceSq(rx0,ry0,rx1,ry1);
-    if(!m.near && sweptCircleTOI(rx0,ry0,rx1,ry1,dangerRadius)<0 &&
+    const noHit=sweptCircleTOI(rx0,ry0,rx1,ry1,dangerRadius)<0;
+    const scale=Math.max(.28,S.cameraScale);
+    if(!m.near && noHit &&
        nearMin<nearRadius()*nearRadius() &&
-       nearMin>Math.pow(dangerRadius+4/Math.max(.28,S.cameraScale),2)){
+       nearMin>Math.pow(dangerRadius+4/scale,2)){
       m.near=true;S.near++;
-      rewardSkill(.60,.14,1.82);
-      S.score+=125*S.combo;
+      // Near misses teach spatial confidence; Judo is the real score engine.
+      rewardSkill(.22,.075,1.15);
+      S.score+=50*Math.min(4,S.combo);
+      if(S.t-(S.lastNearAt||-99)<2.1 && S.inputTravel>(S.lastNearTravel||0)+32){
+        S.balletCount++;
+        S.score+=80*Math.min(3,S.combo);
+      }
+      S.lastNearAt=S.t;
+      S.lastNearTravel=S.inputTravel;
       S.nearSlow=Math.max(S.nearSlow,.030);
       S.nearFlash=1;
       S.shake=Math.max(S.shake,.85+S.flow*.65);
-      floatText(player.x,player.y-23,'NEAR MISS',`hsl(${190+S.flow*115} 100% 86%)`);
+
+
       sfxFlyby(Math.min(2.2,m.speed*S.cameraScale/260));
       sfxNear();
       musicalSkillHit('near',1);
@@ -3497,8 +3778,7 @@ function update(dt){
 
   for(const p of S.particles){
     p.life-=dt;
-    if(p.text)p.y+=p.vy*dt;
-    else if(p.bloom){
+    if(p.bloom){
       // Screen-space light bloom: intentionally stationary and very short lived.
     }else{
       p.x+=p.vx*dt;p.y+=p.vy*dt;
@@ -3507,7 +3787,8 @@ function update(dt){
   }
   S.particles=S.particles.filter(p=>p.life>0);
 
-  S.score+=dt*(38+S.t*.16)*S.combo;
+  // Mastery score favors control of enemy interactions over passive survival.
+  S.score+=dt*(25+Math.min(26,S.t*.10))*Math.min(3.5,S.combo);
   hud();
 }
 
@@ -3985,6 +4266,48 @@ function drawPlanet(cx,cy,r,alpha,detail,deepOrbit){
   ctx.restore();
 }
 
+function drawMasteryAtmosphere(){
+  // Screen-space artwork only; never affect collision space or controls.
+  if(S.deathMode)return;
+  const field=S.zoomStage, reduced=introReducedMotion;
+  const t=reduced?0:S.t;
+  ctx.save();
+  if(field===0){
+    const y=H*.79, sweep=(t*37)%(W+70)-35;
+    ctx.strokeStyle='rgba(94,245,255,.11)';
+    ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(sweep-38,y+4);
+    ctx.lineTo(sweep,y-12);ctx.lineTo(sweep+38,y+4);ctx.stroke();
+  }else if(field===1){
+    const glow=ctx.createLinearGradient(0,H*.16,W,H*.54);
+    glow.addColorStop(0,'rgba(54,255,235,0)');
+    glow.addColorStop(.48,'rgba(90,208,255,.032)');
+    glow.addColorStop(1,'rgba(235,100,255,0)');
+    ctx.fillStyle=glow;ctx.fillRect(0,H*.14,W,H*.46);
+  }else if(field===2){
+    ctx.lineWidth=1;ctx.strokeStyle='rgba(184,228,255,.085)';
+    ctx.beginPath();ctx.ellipse(W*.5,H*1.18,W*.95,H*.63,-.08,3.58,5.87);
+    ctx.stroke();
+  }else if(field===3){
+    ctx.lineWidth=1.15;ctx.strokeStyle='rgba(128,198,255,.082)';
+    ctx.beginPath();ctx.ellipse(W*.55,H*.91,W*.94,H*.37,-.12,3.45,6.08);
+    ctx.stroke();
+    ctx.beginPath();ctx.ellipse(W*.55,H*.91,W*.98,H*.41,-.12,3.55,5.96);
+    ctx.stroke();
+  }else if(field===4){
+    const motif=MASTERY_ORBIT_MOTIFS[Math.max(0,S.orbitMotif)];
+    ctx.strokeStyle=motif.color;ctx.globalAlpha=S.orbitRest?.065:.105;
+    ctx.lineWidth=1.1;
+    const drift=reduced?0:t*.10;
+    ctx.beginPath();
+    ctx.ellipse(W*.5,H*.43,W*.70,H*.27,drift,Math.PI*.08,Math.PI*.89);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(W*.5,H*.43,W*.82,H*.34,drift+1.1,Math.PI*.17,Math.PI*.96);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 function background(){
   const t=S.t;
   const stage=S.zoomStage;
@@ -4333,6 +4656,7 @@ function draw(){
   ctx.translate(sx,sy);
 
   background();
+  drawMasteryAtmosphere();
   drawDeathVista();
 
   // World camera zooms; HUD/background remain stable.
@@ -4408,7 +4732,7 @@ function draw(){
   }
   ctx.restore();
 
-  if(!S.deathMode && (S.invuln<=0||Math.floor(S.invuln*20)%2===0)){
+  if(!S.deathMode && (S.dashGuard>0||S.dashGuardFrameActive||S.invuln<=0||Math.floor(S.invuln*20)%2===0)){
     drawRocket(player.x,player.y,player.angle,1.08,'#45f4ff',true);
   }
 
@@ -4416,15 +4740,7 @@ function draw(){
     const pa=Math.max(0,p.life/(p.max||.68));
     ctx.globalAlpha=Math.min(1,pa);
 
-    if(p.text){
-      ctx.fillStyle=p.color;
-      ctx.font='900 9px ui-monospace,monospace';
-      ctx.textAlign='center';
-      ctx.shadowBlur=6;
-      ctx.shadowColor=p.color;
-      ctx.fillText(p.text,p.x,p.y);
-
-    }else if(p.bloom){
+    if(p.bloom){
       // Large, short-lived colour wash. Radius is screen-space compensated.
       const r=(p.radius||90)/Math.max(.28,S.cameraScale);
       const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r);
