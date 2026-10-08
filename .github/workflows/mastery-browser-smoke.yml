@@ -14,10 +14,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install headless Chromium for gameplay smoke
+      - name: Install Playwright and select preinstalled Chrome
         run: |
           npm install --no-save playwright
-          npx playwright install --with-deps chromium
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          if [ -n "$CHROME" ]; then
+            echo "MASTERY_SYSTEM_CHROME=$CHROME" >> "$GITHUB_ENV"
+            echo "Using runner's preinstalled Chrome: $CHROME"
+          else
+            npx playwright install chromium
+          fi
       - name: Smoke launch and Field V on a portrait touch viewport
         run: |
           python3 -m http.server 8765 >/tmp/mastery-http.log 2>&1 &

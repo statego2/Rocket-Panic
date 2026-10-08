@@ -28,7 +28,7 @@ test('slingshot changes enemy heading toward pilot lateral swipe',()=>{
   assert.ok(down && up,'both perpendicular approaches are valid');
   assert.ok(down.radians>0 && up.radians<0);
   assert.ok(Math.abs(down.radians+up.radians)<1e-12);
-  assert.ok(down.hold>=.35 && down.hold<=.60);
+  assert.ok(down.hold>=1.05 && down.hold<=1.31);
 });
 
 test('close passages bend more, but never exceed a controlled deflection',()=>{
@@ -36,20 +36,29 @@ test('close passages bend more, but never exceed a controlled deflection',()=>{
   const far=impulse(0,0,40,39,12,45,.1);
   assert.ok(near && far);
   assert.ok(near.radians>far.radians);
-  assert.ok(near.radians<=.52+1e-9,'max angle <= 30 degrees');
-  assert.ok(near.radians>.2,'effect should be visually meaningful');
+  assert.ok(near.radians<=1.46+1e-9,'max angle <= 84 degrees');
+  assert.ok(near.radians>1.0,'effect must be visually meaningful');
 });
 
 test('no fake gravity when stationary, late, parallel or physically unsafe',()=>{
   assert.equal(impulse(0,0,0,20,12,45,.03),null);
   assert.equal(impulse(0,0,7,20,12,45,.03),null);
   assert.equal(impulse(0,40,0,20,12,45,.03),null);
-  assert.equal(impulse(0,40,0,20,12,45,.30),null);
+  assert.equal(impulse(0,40,0,20,12,45,.30),null,'parallel movement');
+  assert.equal(impulse(0,0,40,20,12,45,.65),null,'stale gesture');
   assert.equal(impulse(0,0,40,15,12,45,.03),null,'unsafe hitbox proximity');
   assert.equal(impulse(0,0,40,48,12,45,.03),null,'too far');
   assert.equal(impulse(0,0,40,20,12,45,-1),null);
 });
 
+test('incoming rocket visibly veers alongside the pilot, never inward',()=>{
+  const result=impulse(Math.PI,0,46,32,13,62,.12,0);
+  assert.ok(result,'incoming rocket can be redirected via a downward swipe');
+  assert.ok(result.heading>1.2 && result.heading<1.7,'the resulting route points down');
+  assert.ok(Math.cos(result.heading)>0,'must remain at least slightly away from pilot');
+  const y=90*.5*Math.sin(result.heading);
+  assert.ok(y>38,'real downstream travel is visually significant');
+});
 test('deflection remains equivalent across five zoom levels',()=>{
   const scales=[1,.8,.6,.42,.28];
   const turns=scales.map(z=>impulse(0,0,30,21,11,35,.08).radians);
@@ -69,6 +78,7 @@ test('gravity slingshot is genuinely connected to missile physics',()=>{
   assert.match(source,/masteryTelemetry\.emit\('gravity-sling'/);
   assert.match(source,/gravitySlingshots:0/);
   assert.doesNotMatch(source,/showMasteryCue|MASTERY_FIELD_TITLES|flightCue/);
+  assert.doesNotMatch(source,/floatText|p\\.text/,'No text sprites next to any missile');
   assert.doesNotMatch(source,/rocketPanicV22Best/);
 });
 
