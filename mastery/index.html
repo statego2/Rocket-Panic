@@ -732,19 +732,13 @@ button{
 }
 @media(orientation:landscape){#landscape{display:flex}}
 /* Mastery-only cinematic cues. Never block touches. */
-#flightCue{position:absolute;top:23%;left:50%;width:92%;z-index:5;
-  transform:translate(-50%,8px);pointer-events:none;text-align:center;opacity:0;
-  transition:opacity .22s ease,transform .24s ease;font-weight:900;
-  font-size:clamp(12px,3.3vw,17px);letter-spacing:.23em;color:#e7faff;
-  text-shadow:0 0 16px rgba(89,237,255,.65),0 2px 12px #050b23}
-#flightCue.visible{opacity:.93;transform:translate(-50%,0)}
 #skillHud{font-size:8px;letter-spacing:.14em;color:#ffd7a5;opacity:0;
   margin-top:4px;text-shadow:0 0 12px rgba(255,168,90,.4);
   transition:opacity .24s ease}
 #masteryResult{display:none;margin:6px 0 10px;font-size:9px;letter-spacing:.08em;
   color:#bdf9ff;text-align:center;line-height:1.5}
 #overlay.death #masteryResult{display:block}
-@media (prefers-reduced-motion:reduce){#flightCue,#skillHud{transition:none}}
+@media (prefers-reduced-motion:reduce){#skillHud{transition:none}}
 </style>
 </head>
 <body>
@@ -771,7 +765,6 @@ button{
   <div id="stage">FIELD I</div>
   <div id="skillHud">JUDO 0 · BEST CHAIN ×1</div>
 </div>
-<div id="flightCue" aria-hidden="true"></div>
 
 <div id="hint">BAIT · CROSS · BREAK ORBIT</div>
 
@@ -1151,7 +1144,6 @@ const comboEl=document.getElementById('combo');
 const timeEl=document.getElementById('time');
 const stageEl=document.getElementById('stage');
 const skillHudEl=document.getElementById('skillHud');
-const flightCueEl=document.getElementById('flightCue');
 const masteryResultEl=document.getElementById('masteryResult');
 const healthEl=document.getElementById('health');
 const overlay=document.getElementById('overlay');
@@ -1233,6 +1225,30 @@ if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
       S.invuln=2.0;
       return true;
     },
+    // DEV-only integration fixture: the next live update simulates a real
+    // safe flyby after a downward/upward gesture; no public controls added.
+    armGravityFixture:(direction=1)=>{
+      if(!S.running){
+        reset();S.running=true;S.deathMode=false;
+        overlay.style.display='none';app.classList.remove('prelaunch');
+      }
+      S.t=2;S.zoomStage=0;S.stageAge=2;S.zoomFrom=1;
+      S.cameraScale=1;S.zoomTo=1;S.zoomTransition=1;
+      S.breakoutSafety=0;S.dashT=0;S.invuln=1.5;
+      S.missiles.length=0;S.bullets.length=0;
+      S.patternQueue.length=0;S.spawnBank=0;S.bulletBank=0;
+      S.nextPattern=999;
+      S.playerFrameX=player.x;S.playerFrameY=player.y;
+      spawnMissile({type:'basic',speedMul:.3});
+      const m=S.missiles[0];
+      m.x=player.x+26;m.y=player.y;
+      m.angle=0;m.speed=25;m.turn=0;m.age=.5;
+      m.near=false;m.gravityCharged=false;
+      S.gravityGestureX=0;
+      S.gravityGestureY=direction>=0?45:-45;
+      S.gravityGestureAt=S.t;S.recentMoveAt=S.t;
+      return true;
+    },
     seed:Number.isInteger(masteryDevSeed)?masteryDevSeed:null
   });
 }
@@ -1274,8 +1290,10 @@ const S={
   playerFrameX:0,playerFrameY:0,
   collisions:{steered:0,passive:0,dash:0},
   judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
+  gravitySlingshots:0,
+  gravityGestureX:0,gravityGestureY:0,gravityGestureAt:-99,
   recentMoveAt:-99,inputTravel:0,
-  cueUntil:0,cueText:'',orbitMotif:-1,orbitRest:false,
+  orbitMotif:-1,orbitRest:false,
   balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
 };
 
@@ -1298,13 +1316,6 @@ const control={
 
 
 // MASTERY EXPERIENCE RULES — the Classic version cannot access this path.
-const MASTERY_FIELD_TITLES=[
-  'I  // THE FIRST DANCE',
-  'II // THE HUNT BEGINS',
-  'III // TURN THE PURSUIT',
-  'IV // BREAK THE SKY',
-  'V // INFINITE ORBIT'
-];
 const MASTERY_ORBIT_MOTIFS=[
   {title:'PURSUIT SPIRAL',short:'SPIRAL',color:'#71fcff'},
   {title:'LANCE CORRIDOR',short:'CORRIDOR',color:'#ffcf80'},
@@ -1319,10 +1330,6 @@ function masteryOrbitState(age){
   const within=phase-index*18;
   return {index,rest:within>=14,within,cycle:Math.floor(a/54)};
 }
-function showMasteryCue(text,duration=2.0){
-  S.cueText=text;
-  S.cueUntil=S.t+duration;
-}
 function updateMasteryOrbit(){
   if(S.zoomStage!==4)return;
   const state=masteryOrbitState(S.stageAge);
@@ -1332,15 +1339,33 @@ function updateMasteryOrbit(){
     S.orbitRest=state.rest;
     S.patternQueue.length=0; S.patternDelay=0;
     S.nextPattern=state.rest?4.0:Math.min(S.nextPattern,1.5);
-    if(state.rest){
-      showMasteryCue('BREATHE // REPOSITION',1.25);
-    }else if(S.stageAge>2){
-      showMasteryCue(MASTERY_ORBIT_MOTIFS[state.index].title,2.1);
-    }
     masteryTelemetry.emit('orbit-phrase',{
       motif:state.index,rest:state.rest,cycle:state.cycle
     },S.t);
   }
+}
+// A close-pass gravitational slingshot: the pilot's actual lateral swipe bends
+// the missile in that SAME direction. No new button, no teleport, no attraction
+// into the player's hitbox. Pure geometry is independently testable.
+function masteryGravityImpulse(heading,dx,dy,distancePx,hitPx,outerPx,moveAge){
+  if(!Number.isFinite(heading)||!Number.isFinite(dx)||!Number.isFinite(dy)||
+     !Number.isFinite(distancePx)||!Number.isFinite(hitPx)||
+     !Number.isFinite(outerPx)||!Number.isFinite(moveAge))return null;
+  if(moveAge<0||moveAge>.20)return null;
+  const mag=Math.hypot(dx,dy);
+  if(mag<9||outerPx<=hitPx+5)return null;
+  const minSafe=hitPx+4.2;
+  if(distancePx<=minSafe||distancePx>=outerPx)return null;
+  const vx=Math.cos(heading),vy=Math.sin(heading);
+  const sideways=vx*(dy/mag)-vy*(dx/mag);
+  // Following the missile or moving against it cannot magically bend it.
+  if(Math.abs(sideways)<.36)return null;
+  const closeness=Math.max(0,Math.min(1,
+    (outerPx-distancePx)/Math.max(1,outerPx-minSafe)));
+  const radians=Math.sign(sideways)*(.19+.33*closeness)*
+    (.76+.24*Math.abs(sideways));
+  return {heading:heading+radians,radians,
+    hold:.35+.25*closeness,closeness};
 }
 function masteryJudoClassification(m,n,distancePx,inputTravel,recentMoveAge,age){
   // Heuristic local causal evidence, not a claim of exact counterfactual causality.
@@ -2318,12 +2343,10 @@ function hud(){
   comboEl.style.transform=`scale(${(1+flow*.11+(S.nearFlash||0)*.025).toFixed(3)})`;
   comboEl.style.textShadow=`0 0 ${12+flow*16}px hsla(${hue} 100% 65% / ${.38+flow*.36})`;
   timeEl.textContent=S.t.toFixed(1)+'s';
-  stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0]+
-    (S.zoomStage===4 && S.orbitMotif>=0?' · '+MASTERY_ORBIT_MOTIFS[S.orbitMotif].short:'');
-  skillHudEl.textContent='JUDO '+S.judoCount+' · BEST CHAIN ×'+Math.max(1,S.judoPeak);
-  skillHudEl.style.opacity=S.judoCount>0?'1':'0';
-  flightCueEl.textContent=S.cueText;
-  flightCueEl.classList.toggle('visible',S.running&&S.t<S.cueUntil);
+  stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0];
+  skillHudEl.textContent='SLING '+S.gravitySlingshots+
+    ' · JUDO '+S.judoCount+' · CHAIN ×'+Math.max(1,S.judoPeak);
+  skillHudEl.style.opacity=(S.judoCount>0||S.gravitySlingshots>0)?'1':'0';
   [...healthEl.children].forEach((e,i)=>{
     e.classList.toggle('off',i>=player.hp);
     if(i===player.hp && player.hp<3 && S.shieldRegenDelay<=0){
@@ -2372,8 +2395,10 @@ function reset(){
     shockwaves:[],
     collisions:{steered:0,passive:0,dash:0},
     judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
+  gravitySlingshots:0,
+  gravityGestureX:0,gravityGestureY:0,gravityGestureAt:-99,
     recentMoveAt:-99,inputTravel:0,
-    cueUntil:0,cueText:'',orbitMotif:-1,orbitRest:false,
+    orbitMotif:-1,orbitRest:false,
     balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
   });
   player.x=W*.5;player.y=H*.42;player.vx=player.speed*.7;player.vy=0;
@@ -2384,7 +2409,6 @@ function reset(){
   musicTension=0;
   audioStage=-1;
   skillPercLast=-99;
-  flightCueEl.classList.remove('visible');
   skillHudEl.style.opacity='0';
   masteryResultEl.textContent='';
   app.classList.remove('death');
@@ -2420,7 +2444,6 @@ function start(){
   menuMusicActive=false;
   reset();
   S.running=true;
-  showMasteryCue('MASTER THE PURSUIT',2.7);
   masteryTelemetry.emit('run-start',{field:0},0);
   app.classList.remove('prelaunch');
   if(soundEnabled)sfxLaunch();
@@ -2659,7 +2682,8 @@ function updateDeathScene(dt){
     overlayDesc.textContent=lines[S.deathStage]||lines[0];
 
     statsEl.style.display='grid';
-    masteryResultEl.textContent=S.judoCount+
+    masteryResultEl.textContent=S.gravitySlingshots+
+      ' GRAVITY SLINGSHOTS  ·  '+S.judoCount+
       ' JUDO CROSSOVERS  ·  PEAK CHAIN ×'+Math.max(1,S.judoPeak);
     startEl.textContent='RE-LAUNCH';
     if(menuBest)menuBest.textContent=Math.floor(best).toString().padStart(6,'0');
@@ -2873,6 +2897,7 @@ function spawnMissile(opts={}){
     // since this particular projectile acquired its initial heading.
     pairTag:opts.pairTag==null?null:opts.pairTag,
     aimTravel:S.inputTravel,
+    gravityCharged:false,gravityHold:0,gravityHeading:angle,
     phase:encounterRandom()*TAU,
     bias:(encounterRandom()<.5?-1:1)*(.42+encounterRandom()*.28),
     leadTime,
@@ -3124,7 +3149,21 @@ function applyRelativeMove(dx,dy,eventTime=performance.now()){
 
   if(mag>0.1){
     S.recentMoveAt=S.t;
-    S.inputTravel+=mag*Math.max(.28,S.cameraScale);
+    const z=Math.max(.28,S.cameraScale);
+    S.inputTravel+=mag*z;
+    // Accumulate recent *screen-space* swipe displacement. This avoids a
+    // hidden difference between 30/60/120 Hz touch sample densities.
+    if(S.t-S.gravityGestureAt>.18){
+      S.gravityGestureX=0;S.gravityGestureY=0;
+    }
+    S.gravityGestureX+=actualX*z;
+    S.gravityGestureY+=actualY*z;
+    const gestureLen=Math.hypot(S.gravityGestureX,S.gravityGestureY);
+    if(gestureLen>110){
+      S.gravityGestureX*=110/gestureLen;
+      S.gravityGestureY*=110/gestureLen;
+    }
+    S.gravityGestureAt=S.t;
     control.moveX=actualX;
     control.moveY=actualY;
     control.desiredAngle=Math.atan2(actualY,actualX);
@@ -3411,7 +3450,6 @@ function resolveCombatCollisions(px0,py0){
         S.score+=awarded;
         musicalSkillHit('collision',Math.min(1.7,.8+S.judoChain*.15));
         if(S.judoChain>=2){
-          showMasteryCue('MISSILE JUDO // ×'+S.judoChain,1.35);
           shockwave(x,y,'#ffe6b3',.48);
         }
         floatText(x,y-15,S.judoChain>=2?'JUDO CHAIN ×'+S.judoChain:
@@ -3487,7 +3525,6 @@ function update(dt){
   const wantedStage=zoomStageForTime(S.t);
   if(wantedStage!==S.zoomStage){
     S.zoomStage=wantedStage;
-    showMasteryCue(MASTERY_FIELD_TITLES[wantedStage],2.8);
     masteryTelemetry.emit('field-enter',{field:wantedStage},S.t);
     S.zoomFrom=S.cameraScale;
     S.zoomTo=zoomForStage(wantedStage);
@@ -3696,6 +3733,11 @@ function update(dt){
 
     if(S.breakoutSafety>0){
       want=Math.atan2(m.y-player.y,m.x-player.x);
+    }else if(m.gravityHold>0){
+      // A short physical commitment lets a successful pass truly redirect a
+      // tracker instead of allowing its homing AI to erase the effect at once.
+      m.gravityHold=Math.max(0,m.gravityHold-worldDt);
+      want=m.gravityHeading;
     }
 
     let da=((want-m.angle+Math.PI*3)%TAU)-Math.PI;
@@ -3718,13 +3760,35 @@ function update(dt){
        nearMin<nearRadius()*nearRadius() &&
        nearMin>Math.pow(dangerRadius+4/Math.max(.28,S.cameraScale),2)){
       m.near=true;S.near++;
+      // Apply only after the entire swept segment was proven collision-free;
+      // this changes the NEXT frame's trajectory, never retroactively erases a hit.
+      if(!m.gravityCharged && S.breakoutSafety<=0 && S.dashT<=0){
+        const scale=Math.max(.28,S.cameraScale);
+        const impulse=masteryGravityImpulse(m.angle,S.gravityGestureX,
+          S.gravityGestureY,Math.sqrt(nearMin)*scale,
+          dangerRadius*scale,nearRadius()*scale,
+          S.t-S.gravityGestureAt);
+        if(impulse){
+          m.gravityCharged=true;
+          m.gravityHeading=impulse.heading;
+          m.gravityHold=impulse.hold;
+          m.angle=impulse.heading;
+          S.gravitySlingshots++;
+          S.score+=90*Math.min(4,S.combo);
+          burst(m.x,m.y,6,'#95ffe2',.32);
+          floatText(m.x,m.y-13,'SLING','#b5fff0');
+          masteryTelemetry.emit('gravity-sling',{
+            field:S.zoomStage,turnDeg:Math.round(impulse.radians*180/Math.PI),
+            distancePx:Math.round(Math.sqrt(nearMin)*scale)
+          },S.t);
+        }
+      }
       // Near misses teach spatial confidence; Judo is the real score engine.
       rewardSkill(.22,.075,1.15);
       S.score+=50*Math.min(4,S.combo);
       if(S.t-(S.lastNearAt||-99)<2.1 && S.inputTravel>(S.lastNearTravel||0)+32){
         S.balletCount++;
         S.score+=80*Math.min(3,S.combo);
-        if(S.balletCount%3===0)showMasteryCue('ROCKET BALLET',1.05);
       }
       S.lastNearAt=S.t;
       S.lastNearTravel=S.inputTravel;

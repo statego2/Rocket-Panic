@@ -78,10 +78,10 @@ test('Mastery authored recipes have Judo pairs and orbit-specific type decisions
 });
 test('Escape Velocity: visual treatment and mode scoring stay isolated',()=>{
   assert.match(source,/function drawMasteryAtmosphere\(/);
-  assert.match(source,/MASTERY_FIELD_TITLES/);
+  assert.doesNotMatch(source,/MASTERY_FIELD_TITLES/);
   assert.match(source,/MASTERY_ORBIT_MOTIFS/);
   assert.match(source,/rocketPanicMasteryV2Best/);
   assert.doesNotMatch(source,/rocketPanicV22Best/);
-  assert.match(html,/id="flightCue"/);
+  assert.doesNotMatch(html,/id="flightCue"/);
   assert.match(html,/id="skillHud"/);
 });
