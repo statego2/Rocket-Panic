@@ -1253,7 +1253,7 @@ const S={
   judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
   recentMoveAt:-99,inputTravel:0,
   cueUntil:0,cueText:'',orbitMotif:-1,orbitRest:false,
-  balletCount:0,patternSerial:0
+  balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
 };
 
 const player={
@@ -2346,7 +2346,7 @@ function reset(){
     judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
     recentMoveAt:-99,inputTravel:0,
     cueUntil:0,cueText:'',orbitMotif:-1,orbitRest:false,
-    balletCount:0,patternSerial:0
+    balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
   });
   player.x=W*.5;player.y=H*.42;player.vx=player.speed*.7;player.vy=0;
   S.playerFrameX=player.x;S.playerFrameY=player.y;
@@ -2957,7 +2957,6 @@ function beginThreatPattern(){
   S.lastPattern=pick;
   S.patternQueue=recipes[pick].map(v=>({...v}));
   S.patternDelay=0;
-  masteryTelemetry.emit('ballet-pattern',{stage,tag,pick,orbit},S.t);
   return true;
 }
 
@@ -3365,23 +3364,36 @@ function resolveCombatCollisions(px0,py0){
       const playerAtX=px0+(player.x-px0)*e.t;
       const playerAtY=py0+(player.y-py0)*e.t;
       const screenDist=Math.hypot(x-playerAtX,y-playerAtY)*scale;
-      const steered=screenDist<220&&(m.near||n.near);
-      // "Nearby" is an observed proximity heuristic, not proof of player intent.
+      const judo=masteryJudoClassification(m,n,screenDist,S.inputTravel,
+        S.t-S.recentMoveAt,S.t);
       masteryTelemetry.emit('missile-pair',{
-        field:S.zoomStage,proximity:steered?'nearby':'passive',
-        distancePx:Math.round(screenDist)
+        field:S.zoomStage,proximity:judo.local?'nearby':'passive',
+        distancePx:Math.round(screenDist),earned:judo.earned,
+        movedPx:Math.round(judo.moved),pair:judo.paired
       },S.t);
-      if(steered){
+      if(judo.earned){
+        const chained=S.t-S.judoLastAt<=2.4;
+        S.judoChain=chained?Math.min(5,S.judoChain+1):1;
+        S.judoLastAt=S.t;
+        S.judoPeak=Math.max(S.judoPeak,S.judoChain);
+        S.judoCount++;
         S.collisions.steered++;
-        rewardSkill(.36,.16,1.82);
-        S.score+=210*S.combo;
-        musicalSkillHit('collision',1);
-        floatText(x,y-12,'CHAIN BOOM','#ffd0f2');
+        rewardSkill(.65,.24,2.1);
+        const awarded=(280+110*(S.judoChain-1))*Math.min(7,S.combo);
+        S.score+=awarded;
+        musicalSkillHit('collision',Math.min(1.7,.8+S.judoChain*.15));
+        if(S.judoChain>=2){
+          showMasteryCue('MISSILE JUDO // ×'+S.judoChain,1.35);
+          shockwave(x,y,'#ffe6b3',.48);
+        }
+        floatText(x,y-15,S.judoChain>=2?'JUDO CHAIN ×'+S.judoChain:
+          'MISSILE JUDO','#ffe9bd');
       }else{
         S.collisions.passive++;
-        S.score+=28;
+        // A passive world collision is pretty, not a mastery score farm.
+        S.score+=8;
       }
-      S.shake=Math.max(S.shake,steered?4.2:3.1);
+      S.shake=Math.max(S.shake,judo.earned?4.8:2.6);
     }else if(e.kind==='playerMissile'){
       const m=a[e.i];
       if(m.dead)continue;
@@ -3678,8 +3690,16 @@ function update(dt){
        nearMin<nearRadius()*nearRadius() &&
        nearMin>Math.pow(dangerRadius+4/Math.max(.28,S.cameraScale),2)){
       m.near=true;S.near++;
-      rewardSkill(.60,.14,1.82);
-      S.score+=125*S.combo;
+      // Near misses teach spatial confidence; Judo is the real score engine.
+      rewardSkill(.22,.075,1.15);
+      S.score+=50*Math.min(4,S.combo);
+      if(S.t-(S.lastNearAt||-99)<2.1 && S.inputTravel>(S.lastNearTravel||0)+32){
+        S.balletCount++;
+        S.score+=80*Math.min(3,S.combo);
+        if(S.balletCount%3===0)showMasteryCue('ROCKET BALLET',1.05);
+      }
+      S.lastNearAt=S.t;
+      S.lastNearTravel=S.inputTravel;
       S.nearSlow=Math.max(S.nearSlow,.030);
       S.nearFlash=1;
       S.shake=Math.max(S.shake,.85+S.flow*.65);
