@@ -22,7 +22,7 @@ function extractFunction(name) {
 }
 
 const geometry = ['sweptCircleTOI', 'segmentMinDistanceSq'].map(extractFunction).join('\n');
-const collisions = extractFunction('isPilotProtected') + '\n' + extractFunction('resolveCombatCollisions');
+const collisions = extractFunction('masteryJudoClassification') + '\n' + extractFunction('isPilotProtected') + '\n' + extractFunction('resolveCombatCollisions');
 const dash = extractFunction('dash');
 
 function makeEnv(missiles = [], player = {x:0,y:100,hp:3}) {
@@ -31,7 +31,7 @@ function makeEnv(missiles = [], player = {x:0,y:100,hp:3}) {
     control: {moveX:1,moveY:0,desiredAngle:0},
     S: {
       running:true,dashCd:0,dashT:0,dashGuard:0,dashGuardFrameActive:false,zoomStage:1,cameraScale:1,
-      missiles,bullets:[],collisions:{steered:0,passive:0,dash:0},
+      missiles,bullets:[],t:0,inputTravel:0,recentMoveAt:-99,collisions:{steered:0,passive:0,dash:0},
       score:0,combo:1,shake:0,invuln:0
     }
   };
@@ -47,6 +47,7 @@ function makePhysics(env) {
       sfxExplosion=()=>{},rewardSkill=()=>{},musicalSkillHit=()=>{},
       floatText=()=>{},breakFlow=()=>{},sfxHit=()=>{},
       gameOver=()=>{},sfxDash=()=>{};
+    const masteryTelemetry={emit:()=>{}};
     ${geometry}
     ${collisions}
     ${dash}
@@ -75,7 +76,7 @@ test('missiles that pass through each other collide within a frame', () => {
   makePhysics(env).resolveCombatCollisions(0,100);
   assert.ok(env.S.missiles.every(m=>m.dead));
   assert.equal(env.S.collisions.passive,1);
-  assert.equal(env.S.score,28);
+  assert.equal(env.S.score,8); // Mastery treats passive missile pairs as cosmetic, not skill farms.
 });
 test('player impact is resolved before a later missile/missile impact', () => {
   const env=makeEnv([missile(-30,0,30,0),missile(30,0,-10,0)],{x:-18,y:0,hp:3});
