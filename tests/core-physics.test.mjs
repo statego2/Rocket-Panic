@@ -22,7 +22,7 @@ function extractFunction(name) {
 }
 
 const geometry = ['sweptCircleTOI', 'segmentMinDistanceSq'].map(extractFunction).join('\n');
-const collisions = extractFunction('resolveCombatCollisions');
+const collisions = extractFunction('isPilotProtected') + '\n' + extractFunction('resolveCombatCollisions');
 const dash = extractFunction('dash');
 
 function makeEnv(missiles = [], player = {x:0,y:100,hp:3}) {
@@ -30,7 +30,7 @@ function makeEnv(missiles = [], player = {x:0,y:100,hp:3}) {
     player,
     control: {moveX:1,moveY:0,desiredAngle:0},
     S: {
-      running:true,dashCd:0,dashT:0,zoomStage:1,cameraScale:1,
+      running:true,dashCd:0,dashT:0,dashGuard:0,dashGuardFrameActive:false,zoomStage:1,cameraScale:1,
       missiles,bullets:[],collisions:{steered:0,passive:0,dash:0},
       score:0,combo:1,shake:0,invuln:0
     }
