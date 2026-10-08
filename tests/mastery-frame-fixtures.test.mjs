@@ -40,6 +40,7 @@ function runDirector(fps,seed,seconds=30){
   const frames=Math.round(seconds*fps);
   for(let frame=0;frame<frames;frame++){
     now=(frame+1)*dt;
+    S.t=now; // The production director gates its first phrase by elapsed run time.
     // Fixture models real game's missile expiry; otherwise the simulated
     // director incorrectly stops after a few patterns because no missile ages.
     S.missiles=S.missiles.filter(m=>now-m.spawnedAt<6);
