@@ -1225,6 +1225,30 @@ if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
       S.invuln=2.0;
       return true;
     },
+    // DEV-only integration fixture: the next live update simulates a real
+    // safe flyby after a downward/upward gesture; no public controls added.
+    armGravityFixture:(direction=1)=>{
+      if(!S.running){
+        reset();S.running=true;S.deathMode=false;
+        overlay.style.display='none';app.classList.remove('prelaunch');
+      }
+      S.t=2;S.zoomStage=0;S.stageAge=2;S.zoomFrom=1;
+      S.cameraScale=1;S.zoomTo=1;S.zoomTransition=1;
+      S.breakoutSafety=0;S.dashT=0;S.invuln=1.5;
+      S.missiles.length=0;S.bullets.length=0;
+      S.patternQueue.length=0;S.spawnBank=0;S.bulletBank=0;
+      S.nextPattern=999;
+      S.playerFrameX=player.x;S.playerFrameY=player.y;
+      spawnMissile({type:'basic',speedMul:.3});
+      const m=S.missiles[0];
+      m.x=player.x+26;m.y=player.y;
+      m.angle=0;m.speed=25;m.turn=0;m.age=.5;
+      m.near=false;m.gravityCharged=false;
+      S.gravityGestureX=0;
+      S.gravityGestureY=direction>=0?45:-45;
+      S.gravityGestureAt=S.t;S.recentMoveAt=S.t;
+      return true;
+    },
     seed:Number.isInteger(masteryDevSeed)?masteryDevSeed:null
   });
 }
