@@ -6,86 +6,101 @@ import {Script} from 'node:vm';
 const html=readFileSync(new URL('../mastery/index.html',import.meta.url),'utf8');
 const source=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(source,'Mastery game source present');
-
-function productionFunction(name){
-  const i=source.indexOf('function '+name+'(');
-  assert.ok(i>=0,'Missing function '+name);
-  const o=source.indexOf('{',i);
+function production(name){
+  const index=source.indexOf('function '+name+'(');
+  assert.ok(index>=0,'Missing '+name);
+  const opening=source.indexOf('{',index);
   let depth=0;
-  for(let k=o;k<source.length;k++){
-    if(source[k]==='{')depth++;
-    else if(source[k]==='}'&&--depth===0)return source.slice(i,k+1);
+  for(let i=opening;i<source.length;i++){
+    if(source[i]==='{')depth++;
+    else if(source[i]==='}'&&--depth===0)return source.slice(index,i+1);
   }
-  throw Error('Unterminated function '+name);
+  throw Error('Unterminated '+name);
+}
+const protectedSource=production('isPilotProtected');
+const collisionSource=production('resolveCombatCollisions');
+const toi=production('sweptCircleTOI');
+const judo=production('masteryJudoClassification');
+
+function harness({dashGuard=0,dashT=0,invuln=0,frameActive=false,missiles=[],bullets=[]}={}){
+  const S={
+    running:true,t:2,zoomStage:0,cameraScale:1,
+    dashGuard,dashT,invuln,dashGuardFrameActive:frameActive,
+    missiles,bullets,collisions:{steered:0,passive:0,dash:0},
+    inputTravel:0,recentMoveAt:-99,score:0,combo:1,shake:0,
+    shieldRegenDelay:0,shieldRegenProgress:0
+  };
+  const player={x:100,y:100,hp:3};
+  let damageSfx=0;
+  const run=new Function('S','player',`
+    const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+    const hitRadius=()=>2,enemyRadius=()=>2;
+    const burst=()=>{},shockwave=()=>{},explosionBloom=()=>{},
+      sfxExplosion=()=>{},rewardSkill=()=>{},musicalSkillHit=()=>{},
+      floatText=()=>{},breakFlow=()=>{},gameOver=()=>{};
+    const masteryTelemetry={emit:()=>{}};
+    let hits=0;
+    const sfxHit=()=>{hits++;};
+    ${toi}
+    ${judo}
+    ${protectedSource}
+    ${collisionSource}
+    return {resolveCombatCollisions, isPilotProtected, hitSounds:()=>hits};
+  `)(S,player);
+  return {S,player,...run};
+}
+function missile(x0=80,x1=120,y=100){
+  return {prevX:x0,prevY:y,x:x1,y,r:3,color:'#fff',dead:false,age:.8};
+}
+function bullet(x0=80,x1=120,y=100){
+  return {prevX:x0,prevY:y,x:x1,y,r:2,color:'#fff',dead:false};
 }
 
-const impulse=new Function(productionFunction('masteryGravityImpulse')+
-  ';return masteryGravityImpulse;')();
-
-test('slingshot changes enemy heading toward pilot lateral swipe',()=>{
-  const down=impulse(0,0,36,22,13,40,.08);
-  const up=impulse(0,0,-36,22,13,40,.08);
-  assert.ok(down && up,'both perpendicular approaches are valid');
-  assert.ok(down.radians>0 && up.radians<0);
-  assert.ok(Math.abs(down.radians+up.radians)<1e-12);
-  assert.ok(down.hold>=1.05 && down.hold<=1.31);
-});
-
-test('close passages bend more, but never exceed a controlled deflection',()=>{
-  const near=impulse(0,0,40,18,12,45,.1);
-  const far=impulse(0,0,40,39,12,45,.1);
-  assert.ok(near && far);
-  assert.ok(near.radians>far.radians);
-  assert.ok(near.radians<=1.46+1e-9,'max angle <= 84 degrees');
-  assert.ok(near.radians>1.0,'effect must be visually meaningful');
-});
-
-test('no fake gravity when stationary, late, parallel or physically unsafe',()=>{
-  assert.equal(impulse(0,0,0,20,12,45,.03),null);
-  assert.equal(impulse(0,0,7,20,12,45,.03),null);
-  assert.equal(impulse(0,40,0,20,12,45,.03),null);
-  assert.equal(impulse(0,40,0,20,12,45,.30),null,'parallel movement');
-  assert.equal(impulse(0,0,40,20,12,45,.65),null,'stale gesture');
-  assert.equal(impulse(0,0,40,15,12,45,.03),null,'unsafe hitbox proximity');
-  assert.equal(impulse(0,0,40,48,12,45,.03),null,'too far');
-  assert.equal(impulse(0,0,40,20,12,45,-1),null);
-});
-
-test('incoming rocket visibly veers alongside the pilot, never inward',()=>{
-  const result=impulse(Math.PI,0,46,32,13,62,.12,0);
-  assert.ok(result,'incoming rocket can be redirected via a downward swipe');
-  assert.ok(result.heading>1.2 && result.heading<1.7,'the resulting route points down');
-  assert.ok(Math.cos(result.heading)>0,'must remain at least slightly away from pilot');
-  const y=90*.5*Math.sin(result.heading);
-  assert.ok(y>38,'real downstream travel is visually significant');
-});
-test('deflection remains equivalent across five zoom levels',()=>{
-  const scales=[1,.8,.6,.42,.28];
-  const turns=scales.map(z=>impulse(0,0,30,21,11,35,.08).radians);
-  assert.ok(turns.every(v=>Math.abs(v-turns[0])<1e-12));
-  // The engine feeds pure *screen-space* gesture and separation, so camera
-  // compensation is performed in the real update() callsite.
-  assert.match(source,/Math\.sqrt\(nearMin\)\*scale/);
-  assert.match(source,/S\.gravityGestureX/);
-});
-
-test('gravity slingshot is genuinely connected to missile physics',()=>{
-  assert.match(source,/m\.gravityCharged=true/);
-  assert.match(source,/m\.gravityHeading=impulse\.heading/);
-  assert.match(source,/m\.gravityHold=impulse\.hold/);
-  assert.match(source,/m\.angle=impulse\.heading/);
-  assert.match(source,/else if\(m\.gravityHold>0\)/);
-  assert.match(source,/masteryTelemetry\.emit\('gravity-sling'/);
-  assert.match(source,/gravitySlingshots:0/);
-  assert.doesNotMatch(source,/showMasteryCue|MASTERY_FIELD_TITLES|flightCue/);
-  assert.doesNotMatch(source,/floatText|p\\.text/,'No text sprites next to any missile');
-  assert.doesNotMatch(source,/rocketPanicV22Best/);
-});
-
-test('no stage banners, no on-screen motif words',()=>{
-  assert.doesNotMatch(html,/id="flightCue"/);
-  assert.doesNotMatch(source,/SPIRAL'\s*:\s*''/);
-  assert.match(source,/stageEl\.textContent='FIELD '/);
-  assert.doesNotMatch(source,/MASTERY_ORBIT_MOTIFS\[S\.orbitMotif\]\.short/);
+test('Mastery script parses, gravity/slingshot logic is entirely absent',()=>{
   assert.doesNotThrow(()=>new Script(source));
+  assert.doesNotMatch(source,/masteryGravityImpulse|gravityCharged|gravityGesture|gravityHold|gravity-sling|GRAVITY SLINGSHOTS|gravitySlingshots/);
+  assert.doesNotMatch(html,/id="flightCue"/);
+  assert.match(source,/stageEl\.textContent='FIELD '/);
+});
+test('the dash landing guard lasts into post-boost travel',()=>{
+  assert.match(source,/S\.dashGuard=\.38/);
+  assert.match(source,/S\.dashT=\.14/);
+  assert.match(source,/S\.dashGuard=Math\.max\(0,S\.dashGuard-dt\)/);
+  assert.match(source,/S\.dashGuardFrameActive=S\.dashGuard>0/);
+  assert.match(source,/function isPilotProtected\(/);
+  const h=harness({dashGuard:.22,missiles:[missile()]});
+  assert.equal(h.isPilotProtected(),true);
+  h.resolveCombatCollisions(100,100);
+  assert.equal(h.player.hp,3);
+  assert.ok(h.S.missiles[0].dead,'the overlapped threat gets cleared safely');
+});
+test('an entire just-expired frame remains protected',()=>{
+  const h=harness({frameActive:true,missiles:[missile()]});
+  h.resolveCombatCollisions(100,100);
+  assert.equal(h.player.hp,3);
+});
+test('multiple overlapping missiles and bullets cannot remove life during landing',()=>{
+  const h=harness({dashGuard:.10,missiles:[missile(),missile()],bullets:[bullet(),bullet()]});
+  h.resolveCombatCollisions(100,100);
+  assert.equal(h.player.hp,3);
+  assert.ok(h.S.missiles.every(m=>m.dead));
+  assert.ok(h.S.bullets.every(b=>b.dead));
+  assert.equal(h.hitSounds(),0);
+});
+test('normal collisions still cost a shield outside grace window',()=>{
+  const h=harness({missiles:[missile()]});
+  h.resolveCombatCollisions(100,100);
+  assert.equal(h.player.hp,2);
+  assert.equal(h.hitSounds(),1);
+  assert.ok(h.S.invuln>.6);
+});
+test('a bare bullet still costs a shield outside grace window',()=>{
+  const h=harness({bullets:[bullet()]});
+  h.resolveCombatCollisions(100,100);
+  assert.equal(h.player.hp,2);
+  assert.equal(h.hitSounds(),1);
+});
+test('guard does not add missile deflection, text or a new input',()=>{
+  assert.doesNotMatch(source,/floatText\(|m\.angle=impulse\.heading|showMasteryCue/);
+  assert.doesNotMatch(source,/rocketPanicV22Best/);
 });

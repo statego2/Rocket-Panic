@@ -46,34 +46,15 @@ await page.screenshot({path:'test-artifacts/mastery-field-five.png'});
 const events5=await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.getEvents());
 assert.ok(events5.some(e=>e.type==='field-enter'&&e.field===4));
 assert.ok(events5.some(e=>e.type==='orbit-phrase'));
-assert.equal(await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.armGravityFixture(1)),
-  true,'Live slingshot integration fixture armed');
-const before=await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.gravityFixtureSnapshot());
-assert.ok(before,'An actual approaching rocket is present in the live game');
-assert.ok(Math.abs(before.initialAngle-Math.PI)<.01,
-  "Fixture starts with an incoming missile");
-await page.waitForTimeout(500);
-const gravity=await page.evaluate(()=>
-  window.__ROCKET_MASTERY_QA__?.getEvents().filter(e=>e.type==='gravity-sling'));
-const after=await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.gravityFixtureSnapshot());
-assert.ok(gravity?.length>=1,'A genuine close pass must redirect the live missile');
-assert.ok(after?.charged,'Actual missile physics received the slingshot');
-assert.ok(after.y-before.y>25,'Real rocket moves visibly downward after downward swipe');
-assert.ok(Math.cos(after.angle)>0,'Actual trajectory must point away from the pilot');
-assert.ok(gravity.some(e=>Math.abs(e.turnDeg)>60),'Deflection must be stronger than 60 degrees');
-// A second pass must work via REAL pointer events, without scripting a gesture.
-assert.equal(await page.evaluate(()=>{
-  window.__ROCKET_MASTERY_QA__.clearEvents();
-  return window.__ROCKET_MASTERY_QA__.armGravityFixture(1,false);
-}),true,'Unassisted gravity fixture is armed');
-await page.mouse.move(170,675);
-await page.mouse.down();
-await page.mouse.move(170,697,{steps:4});
-await page.mouse.up();
-await page.waitForTimeout(430);
-const manualSlings=await page.evaluate(()=>
-  window.__ROCKET_MASTERY_QA__.getEvents().filter(e=>e.type==='gravity-sling'));
-assert.ok(manualSlings.length>=1,'Actual pointer swipe must redirect incoming rocket');
+assert.equal(await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.armDashLandingFixture()),
+  true,'Live dash landing fixture armed');
+const landingBefore=await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.dashGuardSnapshot());
+assert.ok(landingBefore?.guard>.3,'Landing grace was activated with the dash');
+assert.ok(landingBefore?.incoming>=1,'A new missile approaches the landing point');
+await page.waitForTimeout(210);
+const landingAfter=await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.dashGuardSnapshot());
+assert.equal(landingAfter?.hp,3,'Incoming missile must not remove a shield after dash');
+assert.equal(landingAfter?.incoming,0,'Landing threat must be safely cleared');
 assert.equal(await page.locator('#flightCue').count(),0,'No stage banner overlay');
 assert.equal(await page.locator('#stage').innerText(),'FIELD I',
   'Bare field indicator has no extra textual announcements');
@@ -82,8 +63,7 @@ console.log('BROWSER SMOKE PASS:',JSON.stringify({
   status:res.status(),fieldV,timeAfterStart:t,
   stageChanges:events5.filter(e=>e.type==='field-enter').length,
   orbitEvents:events5.filter(e=>e.type==='orbit-phrase').length,
-  gravitySlingshots:gravity.length,
-  manualSwipeSlingshots:manualSlings.length,
+  landingGuardVerified:landingAfter.hp===3,
   pageErrors:errors
 }));
 await browser.close();
