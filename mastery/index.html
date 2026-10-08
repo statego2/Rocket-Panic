@@ -1267,6 +1267,7 @@ const S={
   collisions:{steered:0,passive:0,dash:0},
   judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
   gravitySlingshots:0,
+  gravityGestureX:0,gravityGestureY:0,gravityGestureAt:-99,
   recentMoveAt:-99,inputTravel:0,
   orbitMotif:-1,orbitRest:false,
   balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
@@ -1328,7 +1329,7 @@ function masteryGravityImpulse(heading,dx,dy,distancePx,hitPx,outerPx,moveAge){
      !Number.isFinite(outerPx)||!Number.isFinite(moveAge))return null;
   if(moveAge<0||moveAge>.20)return null;
   const mag=Math.hypot(dx,dy);
-  if(mag<3||outerPx<=hitPx+5)return null;
+  if(mag<9||outerPx<=hitPx+5)return null;
   const minSafe=hitPx+4.2;
   if(distancePx<=minSafe||distancePx>=outerPx)return null;
   const vx=Math.cos(heading),vy=Math.sin(heading);
@@ -2371,6 +2372,7 @@ function reset(){
     collisions:{steered:0,passive:0,dash:0},
     judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
   gravitySlingshots:0,
+  gravityGestureX:0,gravityGestureY:0,gravityGestureAt:-99,
     recentMoveAt:-99,inputTravel:0,
     orbitMotif:-1,orbitRest:false,
     balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
@@ -3123,7 +3125,21 @@ function applyRelativeMove(dx,dy,eventTime=performance.now()){
 
   if(mag>0.1){
     S.recentMoveAt=S.t;
-    S.inputTravel+=mag*Math.max(.28,S.cameraScale);
+    const z=Math.max(.28,S.cameraScale);
+    S.inputTravel+=mag*z;
+    // Accumulate recent *screen-space* swipe displacement. This avoids a
+    // hidden difference between 30/60/120 Hz touch sample densities.
+    if(S.t-S.gravityGestureAt>.18){
+      S.gravityGestureX=0;S.gravityGestureY=0;
+    }
+    S.gravityGestureX+=actualX*z;
+    S.gravityGestureY+=actualY*z;
+    const gestureLen=Math.hypot(S.gravityGestureX,S.gravityGestureY);
+    if(gestureLen>110){
+      S.gravityGestureX*=110/gestureLen;
+      S.gravityGestureY*=110/gestureLen;
+    }
+    S.gravityGestureAt=S.t;
     control.moveX=actualX;
     control.moveY=actualY;
     control.desiredAngle=Math.atan2(actualY,actualX);
@@ -3724,9 +3740,10 @@ function update(dt){
       // this changes the NEXT frame's trajectory, never retroactively erases a hit.
       if(!m.gravityCharged && S.breakoutSafety<=0 && S.dashT<=0){
         const scale=Math.max(.28,S.cameraScale);
-        const impulse=masteryGravityImpulse(m.angle,control.moveX,control.moveY,
-          Math.sqrt(nearMin)*scale,dangerRadius*scale,
-          nearRadius()*scale,S.t-S.recentMoveAt);
+        const impulse=masteryGravityImpulse(m.angle,S.gravityGestureX,
+          S.gravityGestureY,Math.sqrt(nearMin)*scale,
+          dangerRadius*scale,nearRadius()*scale,
+          S.t-S.gravityGestureAt);
         if(impulse){
           m.gravityCharged=true;
           m.gravityHeading=impulse.heading;
