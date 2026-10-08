@@ -2636,9 +2636,7 @@ function updateDeathScene(dt){
 
   for(const p of S.particles){
     p.life-=dt;
-    if(p.text){
-      p.y+=p.vy*slowDt;
-    }else if(!p.bloom){
+    if(!p.bloom){
       p.x+=p.vx*slowDt;
       p.y+=p.vy*slowDt;
       p.vx*=Math.pow(.18,slowDt);
