@@ -2,6 +2,9 @@ name: Verify Mastery HTML preview link
 on:
   push:
     branches: [mastery-preview]
+  pull_request:
+    branches:
+      - 'experiment/mastery-v2/phase0-shell'
   workflow_dispatch:
 permissions:
   contents: read
