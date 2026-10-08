@@ -42,11 +42,22 @@ await page.screenshot({path:'test-artifacts/mastery-field-five.png'});
 const events5=await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.getEvents());
 assert.ok(events5.some(e=>e.type==='field-enter'&&e.field===4));
 assert.ok(events5.some(e=>e.type==='orbit-phrase'));
+assert.equal(await page.evaluate(()=>window.__ROCKET_MASTERY_QA__?.armGravityFixture(1)),
+  true,'Live slingshot integration fixture armed');
+await page.waitForTimeout(500);
+const gravity=await page.evaluate(()=>
+  window.__ROCKET_MASTERY_QA__?.getEvents().filter(e=>e.type==='gravity-sling'));
+assert.ok(gravity?.length>=1,'A genuine close pass must redirect the live missile');
+assert.ok(gravity.some(e=>e.turnDeg>0),'Downward lateral swipe must bend it down');
+assert.equal(await page.locator('#flightCue').count(),0,'No stage banner overlay');
+assert.equal(await page.locator('#stage').innerText(),'FIELD I',
+  'Bare field indicator has no extra textual announcements');
 assert.deepEqual(errors,[],'No uncaught page exceptions');
 console.log('BROWSER SMOKE PASS:',JSON.stringify({
   status:res.status(),fieldV,timeAfterStart:t,
   stageChanges:events5.filter(e=>e.type==='field-enter').length,
   orbitEvents:events5.filter(e=>e.type==='orbit-phrase').length,
+  gravitySlingshots:gravity.length,
   pageErrors:errors
 }));
 await browser.close();
