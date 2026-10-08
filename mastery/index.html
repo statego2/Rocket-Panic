@@ -1212,7 +1212,16 @@ if(window.__ROCKET_MASTERY_DEV_TELEMETRY__===true){
     clearEvents:()=>masteryTelemetry.clear(),
     // DEV ONLY: jump to real stage transition for fast browser screenshot tests.
     warpToField:(field)=>{
-      if(!Number.isInteger(field)||field<0||field>4||!S.running) return false;
+      if(!Number.isInteger(field)||field<0||field>4)return false;
+      // The automated pilot might already have died in FIELD I. Reinitialize
+      // a fresh DEV run before examining a later actual rendering stage.
+      if(!S.running){
+        reset();
+        S.running=true;
+        S.deathMode=false;
+        overlay.style.display='none';
+        app.classList.remove('prelaunch');
+      }
       const thresholds=[0,20,47,77,110];
       S.t=Math.max(0,thresholds[field]-.015);
       S.zoomStage=Math.max(0,field-1);
