@@ -29,7 +29,7 @@ function runDirector(fps,seed,seconds=30){
   const spawnMissile=opts=>{
     events.push({at:Number(now.toFixed(5)),type:opts.type,angle:opts.spawnAngle,
       gap:opts.gap,targetOffsetX:opts.targetOffsetX||0});
-    S.missiles.push({...opts});
+    S.missiles.push({...opts,spawnedAt:now});
   };
   const {updatePatternDirector}=new Function(
     'S','encounterRandom','TAU','spawnMissile',
@@ -40,6 +40,9 @@ function runDirector(fps,seed,seconds=30){
   const frames=Math.round(seconds*fps);
   for(let frame=0;frame<frames;frame++){
     now=(frame+1)*dt;
+    // Fixture models real game's missile expiry; otherwise the simulated
+    // director incorrectly stops after a few patterns because no missile ages.
+    S.missiles=S.missiles.filter(m=>now-m.spawnedAt<6);
     updatePatternDirector(dt,d);
     assert.ok(S.patternQueue.length<=5,'pattern queue must remain bounded');
     assert.ok(S.missiles.length<=d.cap,'missile cap exceeded');
