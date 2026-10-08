@@ -732,19 +732,13 @@ button{
 }
 @media(orientation:landscape){#landscape{display:flex}}
 /* Mastery-only cinematic cues. Never block touches. */
-#flightCue{position:absolute;top:23%;left:50%;width:92%;z-index:5;
-  transform:translate(-50%,8px);pointer-events:none;text-align:center;opacity:0;
-  transition:opacity .22s ease,transform .24s ease;font-weight:900;
-  font-size:clamp(12px,3.3vw,17px);letter-spacing:.23em;color:#e7faff;
-  text-shadow:0 0 16px rgba(89,237,255,.65),0 2px 12px #050b23}
-#flightCue.visible{opacity:.93;transform:translate(-50%,0)}
 #skillHud{font-size:8px;letter-spacing:.14em;color:#ffd7a5;opacity:0;
   margin-top:4px;text-shadow:0 0 12px rgba(255,168,90,.4);
   transition:opacity .24s ease}
 #masteryResult{display:none;margin:6px 0 10px;font-size:9px;letter-spacing:.08em;
   color:#bdf9ff;text-align:center;line-height:1.5}
 #overlay.death #masteryResult{display:block}
-@media (prefers-reduced-motion:reduce){#flightCue,#skillHud{transition:none}}
+@media (prefers-reduced-motion:reduce){#skillHud{transition:none}}
 </style>
 </head>
 <body>
@@ -771,7 +765,6 @@ button{
   <div id="stage">FIELD I</div>
   <div id="skillHud">JUDO 0 · BEST CHAIN ×1</div>
 </div>
-<div id="flightCue" aria-hidden="true"></div>
 
 <div id="hint">BAIT · CROSS · BREAK ORBIT</div>
 
@@ -1151,7 +1144,6 @@ const comboEl=document.getElementById('combo');
 const timeEl=document.getElementById('time');
 const stageEl=document.getElementById('stage');
 const skillHudEl=document.getElementById('skillHud');
-const flightCueEl=document.getElementById('flightCue');
 const masteryResultEl=document.getElementById('masteryResult');
 const healthEl=document.getElementById('health');
 const overlay=document.getElementById('overlay');
@@ -1275,7 +1267,7 @@ const S={
   collisions:{steered:0,passive:0,dash:0},
   judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
   recentMoveAt:-99,inputTravel:0,
-  cueUntil:0,cueText:'',orbitMotif:-1,orbitRest:false,
+  orbitMotif:-1,orbitRest:false,
   balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
 };
 
@@ -1298,13 +1290,6 @@ const control={
 
 
 // MASTERY EXPERIENCE RULES — the Classic version cannot access this path.
-const MASTERY_FIELD_TITLES=[
-  'I  // THE FIRST DANCE',
-  'II // THE HUNT BEGINS',
-  'III // TURN THE PURSUIT',
-  'IV // BREAK THE SKY',
-  'V // INFINITE ORBIT'
-];
 const MASTERY_ORBIT_MOTIFS=[
   {title:'PURSUIT SPIRAL',short:'SPIRAL',color:'#71fcff'},
   {title:'LANCE CORRIDOR',short:'CORRIDOR',color:'#ffcf80'},
@@ -1319,10 +1304,6 @@ function masteryOrbitState(age){
   const within=phase-index*18;
   return {index,rest:within>=14,within,cycle:Math.floor(a/54)};
 }
-function showMasteryCue(text,duration=2.0){
-  S.cueText=text;
-  S.cueUntil=S.t+duration;
-}
 function updateMasteryOrbit(){
   if(S.zoomStage!==4)return;
   const state=masteryOrbitState(S.stageAge);
@@ -1332,11 +1313,6 @@ function updateMasteryOrbit(){
     S.orbitRest=state.rest;
     S.patternQueue.length=0; S.patternDelay=0;
     S.nextPattern=state.rest?4.0:Math.min(S.nextPattern,1.5);
-    if(state.rest){
-      showMasteryCue('BREATHE // REPOSITION',1.25);
-    }else if(S.stageAge>2){
-      showMasteryCue(MASTERY_ORBIT_MOTIFS[state.index].title,2.1);
-    }
     masteryTelemetry.emit('orbit-phrase',{
       motif:state.index,rest:state.rest,cycle:state.cycle
     },S.t);
@@ -2318,12 +2294,9 @@ function hud(){
   comboEl.style.transform=`scale(${(1+flow*.11+(S.nearFlash||0)*.025).toFixed(3)})`;
   comboEl.style.textShadow=`0 0 ${12+flow*16}px hsla(${hue} 100% 65% / ${.38+flow*.36})`;
   timeEl.textContent=S.t.toFixed(1)+'s';
-  stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0]+
-    (S.zoomStage===4 && S.orbitMotif>=0?' · '+MASTERY_ORBIT_MOTIFS[S.orbitMotif].short:'');
+  stageEl.textContent='FIELD '+['I','II','III','IV','V'][S.zoomStage||0];
   skillHudEl.textContent='JUDO '+S.judoCount+' · BEST CHAIN ×'+Math.max(1,S.judoPeak);
   skillHudEl.style.opacity=S.judoCount>0?'1':'0';
-  flightCueEl.textContent=S.cueText;
-  flightCueEl.classList.toggle('visible',S.running&&S.t<S.cueUntil);
   [...healthEl.children].forEach((e,i)=>{
     e.classList.toggle('off',i>=player.hp);
     if(i===player.hp && player.hp<3 && S.shieldRegenDelay<=0){
@@ -2373,7 +2346,7 @@ function reset(){
     collisions:{steered:0,passive:0,dash:0},
     judoCount:0,judoChain:0,judoPeak:0,judoLastAt:-99,
     recentMoveAt:-99,inputTravel:0,
-    cueUntil:0,cueText:'',orbitMotif:-1,orbitRest:false,
+    orbitMotif:-1,orbitRest:false,
     balletCount:0,patternSerial:0,lastNearAt:-99,lastNearTravel:0
   });
   player.x=W*.5;player.y=H*.42;player.vx=player.speed*.7;player.vy=0;
@@ -2384,7 +2357,6 @@ function reset(){
   musicTension=0;
   audioStage=-1;
   skillPercLast=-99;
-  flightCueEl.classList.remove('visible');
   skillHudEl.style.opacity='0';
   masteryResultEl.textContent='';
   app.classList.remove('death');
@@ -2420,7 +2392,6 @@ function start(){
   menuMusicActive=false;
   reset();
   S.running=true;
-  showMasteryCue('MASTER THE PURSUIT',2.7);
   masteryTelemetry.emit('run-start',{field:0},0);
   app.classList.remove('prelaunch');
   if(soundEnabled)sfxLaunch();
@@ -3411,7 +3382,6 @@ function resolveCombatCollisions(px0,py0){
         S.score+=awarded;
         musicalSkillHit('collision',Math.min(1.7,.8+S.judoChain*.15));
         if(S.judoChain>=2){
-          showMasteryCue('MISSILE JUDO // ×'+S.judoChain,1.35);
           shockwave(x,y,'#ffe6b3',.48);
         }
         floatText(x,y-15,S.judoChain>=2?'JUDO CHAIN ×'+S.judoChain:
@@ -3487,7 +3457,6 @@ function update(dt){
   const wantedStage=zoomStageForTime(S.t);
   if(wantedStage!==S.zoomStage){
     S.zoomStage=wantedStage;
-    showMasteryCue(MASTERY_FIELD_TITLES[wantedStage],2.8);
     masteryTelemetry.emit('field-enter',{field:wantedStage},S.t);
     S.zoomFrom=S.cameraScale;
     S.zoomTo=zoomForStage(wantedStage);
@@ -3724,7 +3693,6 @@ function update(dt){
       if(S.t-(S.lastNearAt||-99)<2.1 && S.inputTravel>(S.lastNearTravel||0)+32){
         S.balletCount++;
         S.score+=80*Math.min(3,S.combo);
-        if(S.balletCount%3===0)showMasteryCue('ROCKET BALLET',1.05);
       }
       S.lastNearAt=S.t;
       S.lastNearTravel=S.inputTravel;
