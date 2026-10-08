@@ -1,0 +1,24 @@
+name: Rocket Panic Mastery experiment tests
+
+on:
+  push:
+    branches:
+      - 'experiment/mastery-v2/**'
+  pull_request:
+    branches:
+      - 'experiment/mastery-mode-v2-planning'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Classic and Mastery gameplay unit tests
+        run: node --test tests/*.test.mjs
