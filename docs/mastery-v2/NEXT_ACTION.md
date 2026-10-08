@@ -1,5 +1,5 @@
 # NEXT_ACTION — ROCKET PANIC MASTERY V2
-**Status as of 2026-10-08 (implementation addendum):** Phase 0 feature branch created; isolated executable source and QA harness committed. On-device parity and full Node CI execution are still UNVERIFIED.
+**Status as of 2026-10-08 (implementation addendum):** Phase 0 feature branch created; isolated executable source and QA harness committed. On-device parity remains UNVERIFIED; GitHub Actions CI has passed 28/28 tests (run 37791307768, commit 3a2e500c98b9165b9fc1b3d5e38ac90f0a6cf081).
 **Planning integration branch:** experiment/mastery-mode-v2-planning
 **Active feature branch:** experiment/mastery-v2/phase0-shell
 **Live CLASSIC /index.html:** untouched; feature branch root SHA 4262dcf85f3593f2f224aa65e3ca92cd93bb0f52.
@@ -46,17 +46,17 @@ The G4 decision is NOT implied by this document. A real player test and explicit
 **Committed only to** `experiment/mastery-v2/phase0-shell`, not main or the planning integration branch:
 - M02: exact Classic clone created at `mastery/index.html`. Its initial Git blob matched root exactly. **HTTP/browser startup still needs manual confirmation**.
 - M03: all three score key references in Mastery moved to `rocketPanicMasteryV2Best`; Classic key absent from Mastery source. Distinct experimental title/kicker. Runtime score-write check on device still pending.
-- M04: `tests/mastery-shell.test.mjs` and experiment-specific workflow `.github/workflows/mastery-v2-ci.yml` added. Legacy test suite untouched. Workflow run **not yet confirmed**.
+- M04: `tests/mastery-shell.test.mjs` and experiment-specific workflow `.github/workflows/mastery-v2-ci.yml` added. Legacy test suite untouched. GitHub Actions CI verified successful: 28/28 Node tests, zero failures, 2026-10-08.
 - M08/M09 (partial): Mastery-only fix for empty/missing coalesced input, final dispatched pointer sample, safe pointer capture, pointercancel/visibilitychange/blur/lostcapture reset; added `tests/mastery-input.test.mjs`. Seven direct V8 production function scenarios passed (including FIELD V compensation), **not a substitute for iPhone testing**.
 - M05 (partial): seeded encounter RNG opt-in via `window.__ROCKET_MASTERY_DEV_SEED__` injected before startup; cosmetic RNG isolated under injected seed, normal default uses Math.random. Added `tests/mastery-seed.test.mjs`. Five direct V8 syntax/seed checks passed.
-- M06 (partial): `createMasteryTelemetry` provides opt-in 256-event bounded QA ring with read-only copy export; start/field/pair/death events; no network, no storage. Added `tests/mastery-telemetry.test.mjs`. Five direct V8 telemetry/parse checks passed. **30/60/120-frame profile replay is not built yet**.
+- M06 (partial): `createMasteryTelemetry` provides opt-in 256-event bounded QA ring with read-only copy export; start/field/pair/death events; no network, no storage. Added `tests/mastery-telemetry.test.mjs`. Five direct V8 telemetry/parse checks passed. 30/60/120 Hz director/continuous-collision fixture tests now exist and pass; full rendered-game long-run performance tests remain pending.
 - `mastery/README.md` describes local launch, fixture injection and uncompleted gates.
 
 **Most important next moves**
-1. Observe experimental GitHub Action pass and run `node --test tests/*.test.mjs` in a checkout; fix any failures before accepting PR.
+1. Initial experiment CI verified (28/28 tests at the test-bearing commit); monitor succeeding workflow runs on later doc-only commits and retain the Classic snapshot guard.
 2. Run local HTTP smoke test and iPhone Safari CLASSIC vs MASTERY screenshots/input comparison (M01/G0).
-3. Add 30/60/120 FPS deterministic frame fixtures (complete M06), then explicit G0 review.
+3. Expand deterministic director/frame fixtures to full rendered-game long-run stress only after browser smoke, then explicit G0 review.
 4. Once parity and input trust are confirmed, pursue M10–M12 Ballet authored encounter slice and M14–M18 real Judo causality.
 5. Merge feature PR **only into experimental planning branch**, never into main; actual public hosting and G4 are separately gated.
 
-**Honesty boundary:** syntactic and direct V8 checks were run, but GitHub Actions completion, full browser playthrough, device FPS and subjective fun have not been observed. Do not mark remaining acceptance criteria DONE.
+**Honesty boundary:** GitHub Actions Node tests really passed (28/28), and direct V8 checks were run. Full browser playthrough, iPhone Safari parity, actual device FPS and subjective fun have NOT been observed. Do not mark those acceptance criteria DONE.
