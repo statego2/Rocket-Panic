@@ -1,0 +1,27 @@
+name: Verify Mastery HTML preview link
+on:
+  push:
+    branches: [mastery-preview]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-external-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CDN preview URL returns HTML game
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://raw.githack.com/statego2/Rocket-Panic/mastery-preview/mastery/index.html"
+          curl --fail --location --show-error --silent --retry 5 --retry-delay 3 --max-time 30 -D /tmp/headers.txt -o /tmp/mastery-preview.html "$URL"
+          grep -Eiq '^content-type:[[:space:]]*text/html' /tmp/headers.txt
+          grep -Fq 'MASTERY // EXPERIMENTAL' /tmp/mastery-preview.html
+          grep -Fq 'rocketPanicMasteryV2Best' /tmp/mastery-preview.html
+          if grep -Fq 'rocketPanicV22Best' /tmp/mastery-preview.html; then
+            echo "ERROR: unexpected Classic score key in Mastery preview" >&2
+            exit 1
+          fi
+          echo "PASS: 200 response with HTML content-type and standalone Mastery source"
+          grep -Ei '^HTTP/|^content-type:' /tmp/headers.txt | tail -n 4
+          wc -c /tmp/mastery-preview.html
