@@ -16,12 +16,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://raw.githack.com/statego2/Rocket-Panic/c8a11cc9a90d62cf2a96b740b1852688892ab5a0/mastery/index.html"
+          URL="https://raw.githack.com/statego2/Rocket-Panic/1b039eaf0c3ad98cf8e7d46ccd0250aceeeec65b/mastery/index.html"
           curl --fail --location --show-error --silent --retry 5 --retry-delay 3 --max-time 30 -D /tmp/headers.txt -o /tmp/mastery-preview.html "$URL"
           grep -Eiq '^content-type:[[:space:]]*text/html' /tmp/headers.txt
           grep -Fq 'MASTERY // EXPERIMENTAL' /tmp/mastery-preview.html
           grep -Fq 'MASTERY_ORBIT_MOTIFS' /tmp/mastery-preview.html
           grep -Fq 'masteryJudoClassification' /tmp/mastery-preview.html
+          grep -Fq 'masteryGravityImpulse' /tmp/mastery-preview.html
+          grep -Fq 'gravityGestureY' /tmp/mastery-preview.html
+          if grep -Eq 'floatText|id="flightCue"' /tmp/mastery-preview.html; then
+            echo "ERROR: world floating text or stage overlay leaked into the new build" >&2
+            exit 1
+          fi
           grep -Fq 'drawMasteryAtmosphere' /tmp/mastery-preview.html
           grep -Fq 'rocketPanicMasteryV2Best' /tmp/mastery-preview.html
           if grep -Fq 'rocketPanicV22Best' /tmp/mastery-preview.html; then
