@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="el">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
@@ -740,6 +740,7 @@ button{
 #overlay.death #masteryResult{display:block}
 @media (prefers-reduced-motion:reduce){#skillHud{transition:none}}
 </style>
+<script src="https://game-cdn.poki.com/scripts/v2/poki-sdk.js"></script>
 </head>
 <body>
 <div id="app" class="intro-running prelaunch">
@@ -824,13 +825,119 @@ button{
   </div>
 </div>
 
-<div id="landscape">Γύρισε το κινητό όρθια.</div>
+<div id="landscape">Turn your phone upright.</div>
 </div>
 
 <script>
 (()=>{
 'use strict';
 
+// Playtest instrumentation. Official Poki SDK only (no ads, no other analytics).
+// Every SDK call is guarded so a missing or blocked SDK cannot stop the game.
+// ?debug=1 mirrors the same events to the console and localStorage. No cookies.
+const SURVIVAL_SCORE_RATE=2.5;
+const PLAYTEST_LOG_KEY='rocketPanicPlaytestDebug';
+const PLAYTEST_DEBUG=(()=>{
+  try{return new URLSearchParams(location.search).get('debug')==='1';}
+  catch(err){return false;}
+})();
+const playtestSession={startedAt:Date.now(),runs:0};
+let playtestGameplayActive=false;
+
+function playtestDebug(event,detail){
+  if(!PLAYTEST_DEBUG)return;
+  const now=Date.now();
+  const entry={
+    event,
+    at:now,
+    sessionMs:now-playtestSession.startedAt,
+    runs:playtestSession.runs
+  };
+  if(detail){
+    for(const key in detail) entry[key]=detail[key];
+  }
+  try{console.info('[RocketPanic playtest]',entry);}catch(err){}
+  try{
+    let store;
+    try{store=JSON.parse(localStorage.getItem(PLAYTEST_LOG_KEY)||'null');}
+    catch(err){store=null;}
+    if(!store||!Array.isArray(store.sessions)) store={sessions:[]};
+    let session=store.sessions[store.sessions.length-1];
+    if(!session||session.startedAt!==playtestSession.startedAt){
+      session={startedAt:playtestSession.startedAt,sessionMs:0,runs:0,events:[]};
+      store.sessions.push(session);
+      if(store.sessions.length>4) store.sessions.splice(0,store.sessions.length-4);
+    }
+    session.sessionMs=entry.sessionMs;
+    session.runs=playtestSession.runs;
+    session.events.push(entry);
+    if(session.events.length>200) session.events.splice(0,session.events.length-200);
+    localStorage.setItem(PLAYTEST_LOG_KEY,JSON.stringify(store));
+  }catch(err){}
+}
+
+function playtestMeasure(category,what,action,detail){
+  try{
+    const sdk=window.PokiSDK;
+    if(sdk&&typeof sdk.measure==='function') sdk.measure(category,what,action);
+  }catch(err){}
+  const payload={category,what,action};
+  if(detail){
+    for(const key in detail) payload[key]=detail[key];
+  }
+  playtestDebug('measure',payload);
+}
+
+function playtestGameplayStart(){
+  if(playtestGameplayActive)return;
+  playtestGameplayActive=true;
+  try{
+    const sdk=window.PokiSDK;
+    if(sdk&&typeof sdk.gameplayStart==='function') sdk.gameplayStart();
+  }catch(err){}
+  playtestDebug('gameplay-start',{});
+}
+
+function playtestGameplayStop(){
+  if(!playtestGameplayActive)return;
+  playtestGameplayActive=false;
+  try{
+    const sdk=window.PokiSDK;
+    if(sdk&&typeof sdk.gameplayStop==='function') sdk.gameplayStop();
+  }catch(err){}
+  playtestDebug('gameplay-stop',{});
+}
+
+function playtestOnHide(){
+  if(S.running) playtestGameplayStop();
+  playtestDebug('session-length',{});
+}
+
+function playtestOnShow(){
+  if(S.running) playtestGameplayStart();
+}
+
+function bootPoki(){
+  playtestDebug('session-start',{});
+  try{
+    const sdk=window.PokiSDK;
+    if(!sdk||typeof sdk.init!=='function'){
+      playtestDebug('loading-finished',{sdk:false});
+      return;
+    }
+    // Official init. The game does not wait on this promise: a blocked core
+    // script never settles, and local or preview play must still start.
+    sdk.init().then(()=>{
+      console.log('Poki SDK successfully initialized');
+    }).catch(()=>{
+      console.log('Initialized, something went wrong, load your game anyway');
+    });
+    if(typeof sdk.gameLoadingFinished==='function') sdk.gameLoadingFinished();
+    playtestDebug('loading-finished',{sdk:true});
+  }catch(err){
+    playtestDebug('loading-finished',{sdk:false});
+  }
+}
 
 const intro=document.getElementById('intro');
 const introCanvas=document.getElementById('introCanvas');
@@ -2415,6 +2522,8 @@ function start(){
   menuMusicActive=false;
   reset();
   S.running=true;
+  playtestSession.runs+=1;
+  playtestGameplayStart();
   masteryTelemetry.emit('run-start',{field:0},0);
   app.classList.remove('prelaunch');
   if(soundEnabled)sfxLaunch();
@@ -2499,6 +2608,13 @@ function gameOver(){
     dashBreaks:S.collisions.dash,
     field:S.zoomStage+1,
     elapsedSeconds:+S.t.toFixed(1)
+  });
+  playtestGameplayStop();
+  // Integer seconds and the floored score: PokiSDK.measure allows at most
+  // two numeric values across category, what, and action.
+  playtestMeasure('run','end',Math.round(S.deathTime)+'s '+S.deathScore,{
+    lengthSeconds:+S.deathTime.toFixed(1),
+    score:S.deathScore
   });
 
   control.active=false;
@@ -2629,11 +2745,11 @@ function updateDeathScene(dt){
       'THE PLANET KEEPS TURNING'
     ];
     const lines=[
-      'Η πτήση τελείωσε χαμηλά. Ο ουρανός όμως συνεχίζει να κινείται χωρίς εσένα.',
-      'Χάθηκες μέσα στην άνοδο. Τα ίχνη των άλλων πυραύλων συνεχίζουν προς τα πάνω.',
-      'Είδες την καμπυλότητα του κόσμου — και ύστερα έμεινε μόνο η κίνηση γύρω σου.',
-      'Το σκάφος χάθηκε σε τροχιά. Η καταδίωξη συνεχίζεται πάνω από τον πλανήτη.',
-      'Χάθηκες στο deep orbit. Ο πλανήτης γυρίζει από κάτω και η μάχη συνεχίζεται.'
+      'The flight ended low. The sky keeps moving without you.',
+      'Lost in the climb. The other rockets keep rising.',
+      'You saw the curve of the world — then only the motion around you.',
+      'The ship vanished in orbit. The chase goes on above the planet.',
+      'Lost in deep orbit. The planet turns below, and the fight goes on.'
     ];
     const deathAccentRgb=[
       '103,245,255',
@@ -3218,11 +3334,22 @@ canvas.addEventListener('lostpointercapture',e=>{
 });
 window.addEventListener('blur',releaseSteering);
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden)releaseSteering();
+  if(document.hidden){
+    releaseSteering();
+    playtestOnHide();
+  }else{
+    playtestOnShow();
+  }
+});
+window.addEventListener('pagehide',()=>{
+  if(S.running) playtestGameplayStop();
+  playtestDebug('session-length',{});
 });
 
 function dash(){
   if(!S.running||S.dashCd>0)return;
+  // typeof keeps extracted physics tests working when this helper is out of scope.
+  if(typeof playtestMeasure==='function') playtestMeasure('action','dash','used');
 
   S.dashCd=2.95;
   S.dashT=.14;
@@ -3387,6 +3514,7 @@ function resolveCombatCollisions(px0,py0){
       shockwave(x,y,'#ff78d8',S.zoomStage>=4?.95:.75);
       explosionBloom(x,y,'#ff78d8',S.zoomStage>=4?1.0:.70);
       sfxExplosion(.8,x,S.zoomStage);
+      if(typeof playtestMeasure==='function') playtestMeasure('combat','missile','hit');
       const playerAtX=px0+(player.x-px0)*e.t;
       const playerAtY=py0+(player.y-py0)*e.t;
       const screenDist=Math.hypot(x-playerAtX,y-playerAtY)*scale;
@@ -3486,6 +3614,8 @@ function update(dt){
   if(wantedStage!==S.zoomStage){
     S.zoomStage=wantedStage;
     masteryTelemetry.emit('field-enter',{field:wantedStage},S.t);
+    if(wantedStage===1) playtestMeasure('field','II','reached');
+    else if(wantedStage===2) playtestMeasure('field','III','reached');
     S.zoomFrom=S.cameraScale;
     S.zoomTo=zoomForStage(wantedStage);
     S.zoomTransition=0;
@@ -3788,7 +3918,8 @@ function update(dt){
   S.particles=S.particles.filter(p=>p.life>0);
 
   // Mastery score favors control of enemy interactions over passive survival.
-  S.score+=dt*(25+Math.min(26,S.t*.10))*Math.min(3.5,S.combo);
+  // SURVIVAL_SCORE_RATE scales this whole per-second climb (base 25, plus up to 26 from time).
+  S.score+=dt*(25+Math.min(26,S.t*.10))*Math.min(3.5,S.combo)*SURVIVAL_SCORE_RATE;
   hud();
 }
 
@@ -4852,6 +4983,7 @@ function loop(now){
 resize();
 reset();
 unlockExperienceAudio();
+bootPoki();
 requestAnimationFrame(drawIntro);
 requestAnimationFrame(loop);
 })();
